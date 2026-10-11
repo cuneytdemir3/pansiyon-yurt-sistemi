@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json({ 
         success: true, 
-        reply: 'Yurt Al Asistanı (Demo Modu): Merhaba! MEB pansiyon mevzuatına göre akşam etüt saatimiz 19:15, gece yat yoklamamız ise 23:00'tür. 107, 207 ve 307 numaralı odalar depo ve idari alan olduğundan pansiyon konaklamasına kapalıdır. Size nasıl yardımcı olabilirim?' 
+        reply: "Yurt Al Asistanı (Demo Modu): Merhaba! MEB pansiyon mevzuatına göre akşam etüt saatimiz 19:15, gece yat yoklamamız ise 23:00'tür. 107, 207 ve 307 numaralı odalar depo ve idari alan olduğundan pansiyon konaklamasına kapalıdır. Size nasıl yardımcı olabilirim?" 
       });
     }
 
