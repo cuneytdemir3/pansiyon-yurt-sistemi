@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: Request) {
   try {
@@ -14,15 +14,15 @@ export async function POST(request: Request) {
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: 'Sen Millî Eğitim Bakanlığı (MEB) pansiyon mevzuatını, 19:15 etüt ve 23:00 yat yoklaması saatlerini, 107, 207 ve 307 nolu odaların depo olduğunu bilen uzman bir pansiyon asistanısın.'
-      }
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash',
+      systemInstruction: 'Sen Millî Eğitim Bakanlığı (MEB) pansiyon mevzuatını, 19:15 etüt ve 23:00 yat yoklaması saatlerini, 107, 207 ve 307 nolu odaların depo olduğunu bilen uzman bir pansiyon asistanısın.'
     });
 
-    return NextResponse.json({ success: true, reply: response.text });
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    return NextResponse.json({ success: true, reply: responseText });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
