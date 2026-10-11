@@ -1,0 +1,32 @@
+[
+  {
+    "Adı Soyadı": "Mustafa Demir",
+    "TC Kimlik No": 22222222220,
+    "Cinsiyet": "Erkek",
+    "Kullanıcı Adı": "mustafa.demir",
+    "Branş / Unvan": "Matematik Öğretmeni / Belletmen",
+    "Telefon": "0505 222 3344",
+    "E-posta": "mustafa.demir@okul.meb.k12.tr",
+    "Giriş Şifresi": 123456
+  },
+  {
+    "Adı Soyadı": "Zeynep Kaya",
+    "TC Kimlik No": 33333333330,
+    "Cinsiyet": "Kadın",
+    "Kullanıcı Adı": "zeynep.kaya",
+    "Branş / Unvan": "Fizik Öğretmeni / Belletmen",
+    "Telefon": "0505 333 4455",
+    "E-posta": "zeynep.kaya@okul.meb.k12.tr",
+    "Giriş Şifresi": 123456
+  },
+  {
+    "Adı Soyadı": "Ahmet Çetin",
+    "TC Kimlik No": 77777777770,
+    "Cinsiyet": "Erkek",
+    "Kullanıcı Adı": "ahmet.cetin",
+    "Branş / Unvan": "Tarih Öğretmeni / Nöbetçi Belletmen",
+    "Telefon": "0505 777 8899",
+    "E-posta": "ahmet.cetin@okul.meb.k12.tr",
+    "Giriş Şifresi": 123456
+  }
+]
