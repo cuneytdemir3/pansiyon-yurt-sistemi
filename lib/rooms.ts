@@ -1,33 +1,20 @@
-// Oda ve Kat Mimari Tanımları (MEB Pansiyon Standartları)
-// 107, 207, 307 nolu odalar depo ve idari alan olduğu için sistemden hariç tutulmuştur.
+// lib/rooms.ts
+export const EXCLUDED_ROOMS = [107, 207, 307]; // Depo ve idari alanlar
 
-export const EXCLUDED_ROOMS = [107, 207, 307];
-
-export interface RoomInfo {
-  roomNumber: number;
-  floor: number;
-  capacity: number;
-  block: string;
-}
-
-export function getRoomsForFloor(floor: number): number[] {
-  const rooms: number[] = [];
-  const start = floor * 100 + 1;
-  const end = floor * 100 + 15;
-  for (let i = start; i <= end; i++) {
-    if (!EXCLUDED_ROOMS.includes(i)) {
-      rooms.push(i);
-    }
+export const HOSTEL_FLOORS = [
+  {
+    floor: 1,
+    name: "1. Kat (Erkek Pansiyonu)",
+    rooms: Array.from({ length: 15 }, (_, i) => 101 + i).filter(r => !EXCLUDED_ROOMS.includes(r))
+  },
+  {
+    floor: 2,
+    name: "2. Kat",
+    rooms: Array.from({ length: 15 }, (_, i) => 201 + i).filter(r => !EXCLUDED_ROOMS.includes(r))
+  },
+  {
+    floor: 3,
+    name: "3. Kat",
+    rooms: Array.from({ length: 15 }, (_, i) => 301 + i).filter(r => !EXCLUDED_ROOMS.includes(r))
   }
-  return rooms;
-}
-
-export function getAllValidRooms(): { floor: number; room: number }[] {
-  const all: { floor: number; room: number }[] = [];
-  [1, 2, 3].forEach(floor => {
-    getRoomsForFloor(floor).forEach(room => {
-      all.push({ floor, room });
-    });
-  });
-  return all;
-}
+];
