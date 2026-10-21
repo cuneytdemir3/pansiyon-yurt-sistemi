@@ -1,7 +1,8 @@
+// app/yonetici/page.tsx
 'use client';
 
 import React, { useState } from 'react';
-import { Users, Shield, Search, Bed, Phone, Home, FileSpreadsheet, CheckCircle, Activity, Lock, Globe } from 'lucide-react';
+import { Users, Shield, Search, Bed, Phone, Home, FileSpreadsheet, CheckCircle, Activity, Lock, Globe, LogOut } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface Student {
@@ -35,6 +36,13 @@ export default function YoneticiPage() {
   const [activeTab, setActiveTab] = useState<'erkek' | 'kiz' | 'belletmens' | 'security'>('erkek');
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
+
+  const handleLogout = () => {
+    document.cookie = 'token=; Max-Age=0; path=/;';
+    localStorage.removeItem('token');
+    sessionStorage.clear();
+    window.location.href = '/';
+  };
 
   const [students, setStudents] = useState<Student[]>([
     { id: '1', name: 'Ahmet Yılmaz', tc: '12345678901', gender: 'Erkek', room: 101, bed: 'A', status: 'Var', parentPhone: '05551112233' },
@@ -158,34 +166,43 @@ export default function YoneticiPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 bg-gray-50 min-h-screen">
-      {/* Üst Başlık ve Mobil Uyumlu Sekmeler */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Pansiyon Yöneticisi Paneli</h1>
-          <p className="text-xs md:text-sm text-gray-500">
-            Erkek/Kız Oda Yerleşimleri, Belletmen Kadrosu ve Güvenlik Denetim Günlüğü
-          </p>
+      {/* Üst Başlık, Sekmeler ve Çıkış Butonu */}
+      <div className="flex flex-col gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-gray-100 pb-4">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-800">Pansiyon Yöneticisi Paneli</h1>
+            <p className="text-xs md:text-sm text-gray-500">
+              Erkek/Kız Oda Yerleşimleri, Belletmen Kadrosu ve Güvenlik Denetim Günlüğü
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-xs md:text-sm font-semibold transition-all shadow-sm"
+          >
+            <LogOut className="w-4 h-4" /> Çıkış Yap
+          </button>
         </div>
-        <div className="grid grid-cols-2 sm:flex flex-wrap bg-gray-100 p-1 rounded-xl gap-1 w-full lg:w-auto">
+
+        <div className="grid grid-cols-2 sm:flex flex-wrap bg-gray-100 p-1 rounded-xl gap-1 w-full">
           <button
             onClick={() => setActiveTab('erkek')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs md:text-sm transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition-all flex-1 ${
               activeTab === 'erkek' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'
             }`}
           >
-            <Users className="w-4 h-4" /> Erkek ({students.filter((s) => s.gender === 'Erkek').length})
+            <Users className="w-4 h-4" /> Erkek Öğrenciler ({students.filter((s) => s.gender === 'Erkek').length})
           </button>
           <button
             onClick={() => setActiveTab('kiz')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs md:text-sm transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition-all flex-1 ${
               activeTab === 'kiz' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-600'
             }`}
           >
-            <Users className="w-4 h-4" /> Kız ({students.filter((s) => s.gender === 'Kız').length})
+            <Users className="w-4 h-4" /> Kız Öğrenciler ({students.filter((s) => s.gender === 'Kız').length})
           </button>
           <button
             onClick={() => setActiveTab('belletmens')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs md:text-sm transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition-all flex-1 ${
               activeTab === 'belletmens' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600'
             }`}
           >
@@ -193,7 +210,7 @@ export default function YoneticiPage() {
           </button>
           <button
             onClick={() => setActiveTab('security')}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs md:text-sm transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition-all flex-1 ${
               activeTab === 'security' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-600'
             }`}
           >
@@ -309,7 +326,6 @@ export default function YoneticiPage() {
           </div>
         </div>
       ) : (
-        /* Odaların Altında Öğrenci Listesi */
         <div className="space-y-4">
           {Object.keys(groupedByRoom).length > 0 ? (
             Object.entries(groupedByRoom).map(([roomNo, roomStudents]) => (

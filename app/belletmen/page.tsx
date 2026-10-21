@@ -1,7 +1,8 @@
+// app/belletmen/page.tsx
 'use client';
 
 import React, { useState } from 'react';
-import { CheckCircle, Send, FileText, Home, Printer, X } from 'lucide-react';
+import { CheckCircle, Send, FileText, Home, Printer, X, LogOut } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -26,6 +27,13 @@ export default function BelletmenPage() {
     'Katta herhangi bir disiplin veya asayiş sorunu yaşanmamıştır. Yoklama zamanında tamamlanmıştır.'
   );
 
+  const handleLogout = () => {
+    document.cookie = 'token=; Max-Age=0; path=/;';
+    localStorage.removeItem('token');
+    sessionStorage.clear();
+    window.location.href = '/';
+  };
+
   const getRoomsForFloor = (floor: number) => {
     const start = floor * 100 + 1;
     const end = floor * 100 + 15;
@@ -42,7 +50,6 @@ export default function BelletmenPage() {
     { id: '5', name: 'Emre Kaya', tc: '12345678907', floor: 3, room: 301, bed: 'A', status: 'Var', motherPhone: '05558889900', fatherPhone: '05558889911' },
   ]);
 
-  // Sadece Var ve Yok seçilebilir; Veli izin gönderdiyse 'İzinli' durumu kilitlidir
   const handleStatusChange = (studentId: string, newStatus: 'Var' | 'Yok') => {
     setStudents((prev) =>
       prev.map((s) => {
@@ -68,7 +75,6 @@ export default function BelletmenPage() {
     setTimeout(() => setSuccessMessage(''), 4000);
   };
 
-  // Anne veya Babaya WhatsApp Bildirim Mesajı
   const handleWhatsAppAlert = (student: Student, parentType: 'Anne' | 'Baba', phone: string) => {
     const sessionTitle =
       selectedSession === 'etut' ? 'Akşam Etüt Yoklaması (19:15)' : 'Gece Yat Yoklaması (23:00)';
@@ -97,19 +103,28 @@ export default function BelletmenPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 bg-gray-50 min-h-screen">
-      {/* Üst Başlık */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Nöbetçi Belletmen Yoklama Paneli</h1>
-          <p className="text-xs md:text-sm text-gray-500">
-            Etüt (19:15) ve Yat Yoklaması (23:00) • 107, 207 ve 307 nolu depo odaları hariç tutulmuştur
-          </p>
+      {/* Üst Başlık ve Çıkış Butonu */}
+      <div className="flex flex-col gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-gray-100 pb-4">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-800">Nöbetçi Belletmen Yoklama Paneli</h1>
+            <p className="text-xs md:text-sm text-gray-500">
+              Etüt (19:15) ve Yat Yoklaması (23:00) • 107, 207 ve 307 nolu depo odaları hariç tutulmuştur
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-xs md:text-sm font-semibold transition-all shadow-sm"
+          >
+            <LogOut className="w-4 h-4" /> Çıkış Yap
+          </button>
         </div>
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+
+        <div className="flex flex-wrap justify-between items-center gap-2">
           <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
             <button
               onClick={() => setSelectedSession('etut')}
-              className={`flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                 selectedSession === 'etut' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'
               }`}
             >
@@ -117,7 +132,7 @@ export default function BelletmenPage() {
             </button>
             <button
               onClick={() => setSelectedSession('yat')}
-              className={`flex-1 sm:flex-none px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                 selectedSession === 'yat' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600'
               }`}
             >
@@ -238,121 +253,3 @@ export default function BelletmenPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleStatusChange(student.id, 'Var')}
-                            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                              student.status === 'Var'
-                                ? 'bg-green-600 text-white shadow-sm'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            Var
-                          </button>
-                          <button
-                            onClick={() => handleStatusChange(student.id, 'Yok')}
-                            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                              student.status === 'Yok'
-                                ? 'bg-red-600 text-white shadow-sm'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            Yok
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Yok Seçildiğinde Anne ve Baba WhatsApp Seçenekleri */}
-                      {student.status === 'Yok' && (
-                        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 mt-1 p-2.5 rounded-xl bg-red-50 border border-red-100">
-                          <span className="text-xs font-semibold text-red-800 w-full">
-                            WhatsApp Yoklama Bildirimi Gönder:
-                          </span>
-                          <button
-                            onClick={() => handleWhatsAppAlert(student, 'Anne', student.motherPhone)}
-                            className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-all shadow-sm flex-1"
-                          >
-                            <Send className="w-3.5 h-3.5" /> Anneye Mesaj At ({student.motherPhone})
-                          </button>
-                          <button
-                            onClick={() => handleWhatsAppAlert(student, 'Baba', student.fatherPhone)}
-                            className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-all shadow-sm flex-1"
-                          >
-                            <Send className="w-3.5 h-3.5" /> Babaya Mesaj At ({student.fatherPhone})
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Dahili Resmî Nöbet Defteri Modalı */}
-      {isReportModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center pb-4 border-b">
-              <h3 className="text-lg font-bold text-gray-800">MEB Resmî Nöbet Defteri ve Tutanak</h3>
-              <button
-                onClick={() => setIsReportModalOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded-full"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4 text-sm">
-              <div className="text-center pb-3 border-b-2 border-gray-800">
-                <h4 className="font-bold text-base">T.C. MİLLÎ EĞİTİM BAKANLIĞI</h4>
-                <p className="font-semibold">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Tarih: {new Date().toLocaleDateString('tr-TR')} | Yoklama:{' '}
-                  {selectedSession === 'etut' ? 'Akşam Etüt (19:15)' : 'Gece Yat (23:00)'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-xl">
-                <div><span className="font-semibold">Kat:</span> {selectedFloor}. Kat</div>
-                <div><span className="font-semibold">Toplam Öğrenci:</span> {totalCount}</div>
-                <div><span className="font-semibold text-green-700">Mevcut (Var):</span> {presentCount}</div>
-                <div><span className="font-semibold text-red-700">Mazeretsiz Yok:</span> {absentCount}</div>
-                <div><span className="font-semibold text-amber-700">İzinli:</span> {leaveCount}</div>
-              </div>
-
-              <div>
-                <label className="font-semibold text-xs block mb-1">Nöbet Vukuat ve Açıklama Notu:</label>
-                <textarea
-                  value={incidentNotes}
-                  onChange={(e) => setIncidentNotes(e.target.value)}
-                  rows={3}
-                  className="w-full text-xs p-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 pt-6 text-center text-xs">
-                <div>
-                  <p className="font-semibold">Nöbetçi Belletmen Öğretmen</p>
-                  <p className="mt-10 border-t w-40 mx-auto pt-1">İmza</p>
-                </div>
-                <div>
-                  <p className="font-semibold">Pansiyondan Sorumlu Müdür Yrd.</p>
-                  <p className="mt-10 border-t w-40 mx-auto pt-1">Onay / İmza</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-medium hover:bg-blue-700"
-              >
-                <Printer className="w-4 h-4" /> Yazdır / PDF Kaydet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
