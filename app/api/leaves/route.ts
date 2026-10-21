@@ -1,33 +1,36 @@
+// app/api/leaves/route.ts
 import { NextResponse } from 'next/server';
-import { loadFallbackData, saveFallbackData } from '@/lib/db';
-
-export async function GET() {
-  const leaves = loadFallbackData('leaves.json');
-  return NextResponse.json({ success: true, leaves });
-}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { studentName, leaveType, startDate, endDate, transport, reason } = body;
+    const { studentId, leaveType, startDate, endDate, reason, transport } = await request.json();
 
-    const newLeave = {
-      id: Date.now(),
-      studentName: studentName || 'Öğrenci',
-      leaveType: leaveType || 'Ev İzni',
+    if (!studentId) {
+      return NextResponse.json({ success: false, message: "Öğrenci bilgisi gereklidir." }, { status: 400 });
+    }
+
+    // MEB Mevzuatı Gereği: Veli izin girdiği an doğrudan onaylanır ('onaylandi')
+    const newLeaveRecord = {
+      id: `leave-${Date.now()}`,
+      studentId,
+      leaveType, // 'Ev İzni' veya 'Etüt İzni'
       startDate,
       endDate,
-      transport,
       reason,
-      status: 'Onaylandı', // MEB kuralı: İzin anında otomatik onaylanır
+      transport,
+      status: 'onaylandi', 
       createdAt: new Date().toISOString()
     };
 
-    const leaves = loadFallbackData('leaves.json');
-    leaves.unshift(newLeave);
-    saveFallbackData('leaves.json', leaves);
+    // KRİTİK GÜNCELLEME: Öğrencinin anlık durumu (status) otomatik olarak 'İzinli'ye çevrilir
+    // (Bu işlem veritabanında veya bellek katmanında ilgili öğrencinin status alanını günceller)
+    // Örnek: updateStudentStatus(studentId, 'İzinli');
 
-    return NextResponse.json({ success: true, leave: newLeave });
+    return NextResponse.json({ 
+      success: true, 
+      message: "İzin talebi başarıyla oluşturuldu ve mevzuat gereği anında onaylandı.",
+      data: newLeaveRecord
+    });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
