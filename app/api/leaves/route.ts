@@ -1,37 +1,85 @@
 // app/api/leaves/route.ts
 import { NextResponse } from 'next/server';
 
+export interface LeaveItem {
+  id: string;
+  studentId: string;
+  studentName: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  transport: string;
+  address: string;
+  reason: string;
+  status: 'onaylandi';
+  createdAt: string;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __pansiyonLeaves: LeaveItem[] | undefined;
+}
+
+if (!globalThis.__pansiyonLeaves) {
+  globalThis.__pansiyonLeaves = [
+    {
+      id: 'default-leave-1',
+      studentId: '2',
+      studentName: 'Mehmet Demir',
+      leaveType: 'Ev İzni',
+      startDate: '2026-10-20',
+      endDate: '2026-10-25',
+      transport: 'Veli teslim alacak',
+      address: 'İstanbul / Bahçelievler',
+      reason: 'Aile ziyareti ve hafta sonu ev izni',
+      status: 'onaylandi',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+export async function GET() {
+  return NextResponse.json({
+    success: true,
+    leaves: globalThis.__pansiyonLeaves || [],
+  });
+}
+
 export async function POST(request: Request) {
   try {
-    const { studentId, leaveType, startDate, endDate, reason, transport } = await request.json();
+    const body = await request.json();
+    const { studentId, studentName, leaveType, startDate, endDate, transport, address, reason } = body;
 
-    if (!studentId) {
-      return NextResponse.json({ success: false, message: "Öğrenci bilgisi gereklidir." }, { status: 400 });
+    if (!studentId || !startDate || !endDate || !address || !reason) {
+      return NextResponse.json(
+        { success: false, message: 'Lütfen tüm zorunlu izin alanlarını doldurun.' },
+        { status: 400 }
+      );
     }
 
-    // MEB Mevzuatı Gereği: Veli izin girdiği an doğrudan onaylanır ('onaylandi')
-    const newLeaveRecord = {
+    const newLeave: LeaveItem = {
       id: `leave-${Date.now()}`,
-      studentId,
-      leaveType, // 'Ev İzni' veya 'Etüt İzni'
+      studentId: String(studentId),
+      studentName: studentName || 'Öğrenci',
+      leaveType: leaveType || 'Ev İzni',
       startDate,
       endDate,
+      transport: transport || 'Veli teslim alacak',
+      address,
       reason,
-      transport,
-      status: 'onaylandi', 
-      createdAt: new Date().toISOString()
+      status: 'onaylandi',
+      createdAt: new Date().toISOString(),
     };
 
-    // KRİTİK GÜNCELLEME: Öğrencinin anlık durumu (status) otomatik olarak 'İzinli'ye çevrilir
-    // (Bu işlem veritabanında veya bellek katmanında ilgili öğrencinin status alanını günceller)
-    // Örnek: updateStudentStatus(studentId, 'İzinli');
+    globalThis.__pansiyonLeaves = [newLeave, ...(globalThis.__pansiyonLeaves || [])];
 
-    return NextResponse.json({ 
-      success: true, 
-      message: "İzin talebi başarıyla oluşturuldu ve mevzuat gereği anında onaylandı.",
-      data: newLeaveRecord
+    return NextResponse.json({
+      success: true,
+      message: 'İzin talebi otomatik olarak onaylandı.',
+      leave: newLeave,
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }
