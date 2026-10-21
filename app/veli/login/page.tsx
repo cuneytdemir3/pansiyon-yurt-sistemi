@@ -13,7 +13,6 @@ export default function VeliLoginPage() {
   const [successMsg, setSuccessMsg] = useState('');
   const [debugHint, setDebugHint] = useState('');
 
-  // 1. Adım: Telefon Numarasına Kod Gönder
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || phone.length < 10) {
@@ -35,12 +34,7 @@ export default function VeliLoginPage() {
       if (data.success) {
         setStep('otp');
         setSuccessMsg('Tek kullanımlık doğrulama kodunuz WhatsApp üzerinden gönderildi.');
-        if (data.debugCode) setDebugHint(data.debugCode); // Test kolaylığı
-        
-        // İsteğe bağlı: Velinin WhatsApp'ını otomatik aç
-        if (data.whatsappUrl) {
-          // window.open(data.whatsappUrl, '_blank');
-        }
+        if (data.debugCode) setDebugHint(data.debugCode);
       } else {
         setErrorMsg(data.message || 'Kod gönderilemedi.');
       }
@@ -51,7 +45,6 @@ export default function VeliLoginPage() {
     }
   };
 
-  // 2. Adım: Kodu Doğrula ve Giriş Yap
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpCode || otpCode.length !== 6) {
@@ -109,7 +102,6 @@ export default function VeliLoginPage() {
           </div>
         )}
 
-        {/* Test ortamı kolaylığı için ekranda kodu gösteren ipucu */}
         {debugHint && (
           <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs text-center font-mono">
             💡 [Test Modu] WhatsApp Kodunuz: <strong>{debugHint}</strong>
@@ -158,7 +150,7 @@ export default function VeliLoginPage() {
 
             <button
               type="submit"
-5              disabled={loading}
+              disabled={loading}
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold text-sm shadow-sm transition-all cursor-pointer"
             >
               {loading ? 'Doğrulanıyor...' : 'Giriş Yap'} <CheckCircle className="w-4 h-4" />
