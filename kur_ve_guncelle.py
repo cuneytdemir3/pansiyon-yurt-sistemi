@@ -66,58 +66,194 @@ def run_command(command, description):
 
 def main():
     print("=========================================================")
-    print("   BELLETMEN YOKLAMA MODÜLÜ VE OTOMATİK KURULUM")
+    print("   BELLETMEN WHATSAPP BİLDİRİM ONARIMI & GÜNCELLEME")
     print("=========================================================")
 
     kill_old_processes()
 
     tunnel_url = start_tunnel_and_get_url()
     if not tunnel_url:
-        print("⚠️ Tünel başlatılamadı, yerel adres kullanılacak.")
-        tunnel_url = "http://localhost:3001"
+        tunnel_url = "http://127.0.0.1:3001"
 
     print(f"🌍 [AKTİF BOT TÜNELİ]: {tunnel_url}")
 
-    # 1. Belletmen Yoklama API Rotası
-    yoklama_api = """import { NextResponse } from 'next/server';
+    # 1. WhatsApp Bot Kodunu Genel Mesaj Gönderebilecek Şekilde Güncelle (whatsapp-bot.js)
+    whatsapp_bot_code = """
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const http = require('http');
+const fs = require('fs');
 
-declare global {
-  var __pansiyonYoklamaDB: any[] | undefined;
-}
+const possiblePaths = [
+    'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+    'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+    (process.env.LOCALAPPDATA || '') + '\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
+    'C:\\\\Program Files (x86)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe',
+    'C:\\\\Program Files\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe'
+];
 
-if (!globalThis.__pansiyonYoklamaDB) {
-  globalThis.__pansiyonYoklamaDB = [
-    { id: '1', adSoyad: 'Ahmet Yılmaz', sinif: '10-A', odaNo: '201', veliTelefon: '05416571469', durum: 'burada' },
-    { id: '2', adSoyad: 'Mehmet Demir', sinif: '11-B', odaNo: '201', veliTelefon: '05410000002', durum: 'izinli', izinDetay: 'Hafta Sonu Evci İzni' },
-    { id: '3', adSoyad: 'Can Kaya', sinif: '9-C', odaNo: '202', veliTelefon: '05410000003', durum: 'burada' },
-    { id: '4', adSoyad: 'Burak Şahin', sinif: '12-A', odaNo: '203', veliTelefon: '05410000004', durum: 'yok' },
-    { id: '5', adSoyad: 'Emre Çelik', sinif: '10-B', odaNo: '204', veliTelefon: '05410000005', durum: 'revir', izinDetay: 'Baş Ağrısı / Revirde' },
-  ];
-}
-
-export async function GET() {
-  return NextResponse.json({ success: true, data: globalThis.__pansiyonYoklamaDB });
-}
-
-export async function POST(request: Request) {
-  try {
-    const { seans, records } = await request.json();
-    if (Array.isArray(records)) {
-      globalThis.__pansiyonYoklamaDB = records;
+let executablePath = undefined;
+for (const path of possiblePaths) {
+    if (fs.existsSync(path)) {
+        executablePath = path;
+        break;
     }
-    return NextResponse.json({
-      success: true,
-      message: `${seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'} yoklaması başarıyla kaydedildi.`,
-      updatedCount: records?.length || 0
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
-  }
 }
-"""
-    write_file("app/api/belletmen/yoklama/route.ts", yoklama_api)
 
-    # 2. Belletmen Yoklama Sayfası (Düz string ve replace ile tünel adresi gömülür, syntax hatası yapmaz)
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        executablePath: executablePath,
+        headless: false,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
+});
+
+let isReady = false;
+
+client.on('qr', (qr) => {
+    qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+    isReady = true;
+    console.log('\\n✅ [BAŞARILI] WhatsApp Botu Bağlandı ve Hazır!\\n');
+});
+
+client.on('disconnected', () => {
+    isReady = false;
+});
+
+client.initialize();
+
+const server = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+    }
+
+    if (req.method === 'POST' && req.url === '/send-otp') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                if (!isReady) {
+                    res.writeHead(503, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, message: 'Bot hazır değil.' }));
+                    return;
+                }
+
+                const { phone, code, customMessage } = JSON.parse(body);
+                let cleanPhone = (phone || '').replace(/\\D/g, '');
+                if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+                if (!cleanPhone.startsWith('90')) cleanPhone = '90' + cleanPhone;
+
+                // Özel mesaj verilmişse onu at, yoksa standart OTP kalıbını kullan
+                let message = customMessage;
+                if (!message) {
+                    message = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nVeli Portalı Tek Kullanımlık Giriş Kodunuz: *${code}*\\n\\nBu kod 3 dakika geçerlidir.`;
+                }
+
+                let targetChatId = `${cleanPhone}@c.us`;
+                if (client.info && client.info.wid && client.info.wid.user === cleanPhone) {
+                    targetChatId = client.info.wid._serialized;
+                } else {
+                    const numberDetails = await client.getNumberId(cleanPhone);
+                    if (numberDetails) {
+                        targetChatId = numberDetails._serialized;
+                    }
+                }
+
+                await client.sendMessage(targetChatId, message, { sendSeen: false });
+                console.log(`✅ [MESAJ GÖNDERİLDİ] -> ${cleanPhone}`);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: 'Mesaj iletildi.' }));
+            } catch (err) {
+                console.error('❌ Hata:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, message: err.message }));
+            }
+        });
+    } else {
+        res.writeHead(404);
+        res.end();
+    }
+});
+
+server.listen(3001, () => {
+    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde hazır.');
+});
+"""
+    write_file("whatsapp-bot.js", whatsapp_bot_code)
+
+    # 2. Sunucu Taraflı Bildirim API Rotası (app/api/belletmen/bildirim/route.ts)
+    bildirim_api_code = f"""import {{ NextResponse }} from 'next/server';
+
+const BOT_URLS = ['{tunnel_url}', 'http://127.0.0.1:3001'];
+
+export async function POST(request: Request) {{
+  try {{
+    const {{ ogrenciler, seans }} = await request.json();
+    if (!Array.isArray(ogrenciler) || ogrenciler.length === 0) {{
+      return NextResponse.json({{ success: false, message: 'Bildirilecek öğrenci bulunamadı.' }}, {{ status: 400 }});
+    }}
+
+    const seansAdi = seans === 'etut' ? '19:15 Etüt' : '23:00 Yat';
+    let basarili = 0;
+    let basarisiz = 0;
+
+    for (const ogr of ogrenciler) {{
+      const customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz, öğrenciniz *${{ogr.adSoyad}}* (Oda: ${{ogr.odaNo}}) pansiyonumuzun bu akşamki *${{seansAdi}}* yoklamasında bulunamamıştır.\\n\\nLütfen acilen nöbetçi belletmen öğretmen ile iletişime geçiniz.`;
+
+      let gonderildi = false;
+      for (const botUrl of BOT_URLS) {{
+        try {{
+          const controller = new AbortController();
+          const tid = setTimeout(() => controller.abort(), 7000);
+
+          const res = await fetch(`${{botUrl}}/send-otp`, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{
+              phone: ogr.veliTelefon,
+              customMessage: customMessage
+            }}),
+            signal: controller.signal
+          }});
+          clearTimeout(tid);
+
+          const data = await res.json();
+          if (res.ok && data.success) {{
+            gonderildi = true;
+            break;
+          }}
+        }} catch (e) {{}}
+      }}
+
+      if (gonderildi) basarili++;
+      else basarisiz++;
+    }}
+
+    return NextResponse.json({{
+      success: true,
+      message: `${{basarili}} veliye WhatsApp bildirimi başarıyla iletildi.${{basarisiz > 0 ? ` (${{basarisiz}} veliye ulaşılamadı)` : ''}}`,
+      basarili,
+      basarisiz
+    }});
+  }} catch (err: any) {{
+    return NextResponse.json({{ success: false, message: err.message }}, {{ status: 500 }});
+  }}
+}}
+"""
+    write_file("app/api/belletmen/bildirim/route.ts", bildirim_api_code)
+
+    # 3. Yoklama Sayfası (app/belletmen/yoklama/page.tsx - Sunucu API'sini Çağırır)
     yoklama_page = """'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -140,8 +276,6 @@ interface Ogrenci {
   durum: 'burada' | 'yok' | 'izinli' | 'revir';
   izinDetay?: string;
 }
-
-const TUNNEL_URL = '__TUNNEL_URL_PLACEHOLDER__';
 
 export default function BelletmenYoklamaPage() {
   const [ogrenciler, setOgrenciler] = useState<Ogrenci[]>([]);
@@ -215,30 +349,26 @@ export default function BelletmenYoklamaPage() {
     if (yokOlanlar.length === 0) return;
 
     setSendingAlerts(true);
-    let basarili = 0;
+    setBilgiMesaji('Velilere WhatsApp mesajları gönderiliyor, lütfen bekleyin...');
 
-    for (const ogr of yokOlanlar) {
-      const seansAdi = seans === 'etut' ? '19:15 Etüt' : '23:00 Yat';
-      const mesaj = `Sayın Velimiz, öğrenciniz ${ogr.adSoyad} pansiyonumuzun bu akşamki (${seansAdi}) yoklamasında bulunamamıştır. Lütfen nöbetçi belletmen ile iletişime geçiniz.`;
-      
-      for (const targetUrl of [TUNNEL_URL, 'http://localhost:3001']) {
-        try {
-          const res = await fetch(`${targetUrl}/send-otp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: ogr.veliTelefon, code: mesaj })
-          });
-          if (res.ok) {
-            basarili++;
-            break;
-          }
-        } catch {}
+    try {
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ogrenciler: yokOlanlar, seans })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBilgiMesaji(data.message);
+      } else {
+        setBilgiMesaji(data.message || 'Bildirim gönderilemedi.');
       }
+    } catch {
+      setBilgiMesaji('Bildirim sunucusuna ulaşılamadı.');
+    } finally {
+      setSendingAlerts(false);
+      setTimeout(() => setBilgiMesaji(''), 6000);
     }
-
-    setSendingAlerts(false);
-    setBilgiMesaji(`${basarili} öğrenci velisine WhatsApp uyarısı iletildi.`);
-    setTimeout(() => setBilgiMesaji(''), 5000);
   };
 
   return (
@@ -446,27 +576,25 @@ export default function BelletmenYoklamaPage() {
     </div>
   );
 }
-""".replace('__TUNNEL_URL_PLACEHOLDER__', tunnel_url)
-
+"""
     write_file("app/belletmen/yoklama/page.tsx", yoklama_page)
 
-    # 3. WhatsApp Botunu Başlat
+    # 4. WhatsApp Botunu Başlat
     print("\n🚀 WHATSAPP BOT SUNUCUSU BAŞLATILIYOR...")
     os.system('start "WHATSAPP_BOT_SUNUCUSU" cmd /k "node whatsapp-bot.js"')
 
-    # 4. Derleme & Git Senkronizasyonu
+    # 5. Derleme & Git Senkronizasyonu
     if not run_command("npm run build", "Next.js derleme testi yapılıyor"):
         print("❌ Derleme hatası! Lütfen terminal çıktısını inceleyin.")
         sys.exit(1)
 
     run_command("git add .", "Değişiklikler Git'e ekleniyor")
-    run_command('git commit -m "Belletmen yoklama sayfasi ve string formati duzeltildi" --allow-empty', "Commit oluşturuluyor")
+    run_command('git commit -m "Belletmen veli uyarisi WhatsApp sunucu API koprusu kuruldu" --allow-empty', "Commit oluşturuluyor")
     run_command("git push origin main", "GitHub ve Vercel'e gönderiliyor")
 
     print("\n=========================================================")
-    print("🎉 BELLETMEN YOKLAMA MODÜLÜ BAŞARIYLA DERLENDİ VE GÖNDERİLDİ!")
-    print("👉 Yoklama ekranı:")
-    print("   https://pansiyon-yurt-sistemi.vercel.app/belletmen/yoklama")
+    print("🎉 GÜNCELLEME TAMAMLANDI!")
+    print("👉 'Velilere Bildir' butonu artık Next.js sunucu köprüsüyle WhatsApp botuna doğrudan bağlıdır.")
     print("=========================================================")
 
 if __name__ == "__main__":

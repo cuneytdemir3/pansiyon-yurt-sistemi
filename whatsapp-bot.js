@@ -15,7 +15,6 @@ let executablePath = undefined;
 for (const path of possiblePaths) {
     if (fs.existsSync(path)) {
         executablePath = path;
-        console.log('🌐 [TARAYICI BULUNDU]:', path);
         break;
     }
 }
@@ -24,29 +23,24 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         executablePath: executablePath,
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+        headless: false,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
 let isReady = false;
 
 client.on('qr', (qr) => {
-    console.log('\n================================================');
-    console.log('📱 LÜTFEN AŞAĞIDAKİ QR KODU WHATSAPP İLE OKUTUN:');
-    console.log('================================================\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
     isReady = true;
-    console.log('\n✅ [BAŞARILI] WhatsApp Botu bağlandı ve mesaj göndermeye hazır!');
-    console.log('👉 Bu pencereyi KAPATMAYIN, arka planda açık kalsın.\n');
+    console.log('\n✅ [BAŞARILI] WhatsApp Botu Bağlandı ve Hazır!\n');
 });
 
 client.on('disconnected', () => {
     isReady = false;
-    console.log('\n❌ [UYARI] WhatsApp bağlantısı koptu!\n');
 });
 
 client.initialize();
@@ -62,12 +56,6 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.method === 'GET' && req.url === '/status') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ready: isReady }));
-        return;
-    }
-
     if (req.method === 'POST' && req.url === '/send-otp') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
@@ -75,36 +63,38 @@ const server = http.createServer(async (req, res) => {
             try {
                 if (!isReady) {
                     res.writeHead(503, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'WhatsApp Botu henüz hazır değil (QR okutulmadı).' }));
+                    res.end(JSON.stringify({ success: false, message: 'Bot hazır değil.' }));
                     return;
                 }
 
-                const { phone, code } = JSON.parse(body);
+                const { phone, code, customMessage } = JSON.parse(body);
                 let cleanPhone = (phone || '').replace(/\D/g, '');
                 if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
                 if (!cleanPhone.startsWith('90')) cleanPhone = '90' + cleanPhone;
 
-                console.log(`⏳ [İŞLENİYOR] ${cleanPhone} numarasına kod gönderiliyor...`);
-
-                const message = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nVeli Portalı Tek Kullanımlık Giriş Kodunuz: *${code}*\n\nBu kod 3 dakika geçerlidir. Güvenliğiniz için kimseyle paylaşmayınız.`;
-
-                // Numaranın WhatsApp ID'sini doğrula (Takılmayı önler)
-                const numberDetails = await client.getNumberId(cleanPhone);
-                if (!numberDetails) {
-                    console.log(`❌ [HATA] ${cleanPhone} numarası WhatsApp'ta kayıtlı değil.`);
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'Bu numara WhatsApp üzerinde bulunamadı.' }));
-                    return;
+                // Özel mesaj verilmişse onu at, yoksa standart OTP kalıbını kullan
+                let message = customMessage;
+                if (!message) {
+                    message = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nVeli Portalı Tek Kullanımlık Giriş Kodunuz: *${code}*\n\nBu kod 3 dakika geçerlidir.`;
                 }
 
-                // sendSeen: false parametresi kendi numaranıza veya yeni numaralara atarken kilitlenmeyi önler
-                await client.sendMessage(numberDetails._serialized, message, { sendSeen: false });
-                console.log(`📨 [MESAJ GÖNDERİLDİ] ${cleanPhone} -> Kod: ${code}`);
+                let targetChatId = `${cleanPhone}@c.us`;
+                if (client.info && client.info.wid && client.info.wid.user === cleanPhone) {
+                    targetChatId = client.info.wid._serialized;
+                } else {
+                    const numberDetails = await client.getNumberId(cleanPhone);
+                    if (numberDetails) {
+                        targetChatId = numberDetails._serialized;
+                    }
+                }
+
+                await client.sendMessage(targetChatId, message, { sendSeen: false });
+                console.log(`✅ [MESAJ GÖNDERİLDİ] -> ${cleanPhone}`);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: 'WhatsApp mesajı başarıyla gönderildi.' }));
+                res.end(JSON.stringify({ success: true, message: 'Mesaj iletildi.' }));
             } catch (err) {
-                console.error('❌ [HATA] Mesaj gönderilemedi:', err.message);
+                console.error('❌ Hata:', err.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, message: err.message }));
             }
@@ -116,5 +106,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(3001, () => {
-    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde dinleniyor...');
+    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde hazır.');
 });

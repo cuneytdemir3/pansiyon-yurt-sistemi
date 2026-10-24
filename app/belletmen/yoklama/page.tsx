@@ -21,8 +21,6 @@ interface Ogrenci {
   izinDetay?: string;
 }
 
-const TUNNEL_URL = 'https://jet-outer-everybody-iron.trycloudflare.com';
-
 export default function BelletmenYoklamaPage() {
   const [ogrenciler, setOgrenciler] = useState<Ogrenci[]>([]);
   const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
@@ -95,30 +93,26 @@ export default function BelletmenYoklamaPage() {
     if (yokOlanlar.length === 0) return;
 
     setSendingAlerts(true);
-    let basarili = 0;
+    setBilgiMesaji('Velilere WhatsApp mesajları gönderiliyor, lütfen bekleyin...');
 
-    for (const ogr of yokOlanlar) {
-      const seansAdi = seans === 'etut' ? '19:15 Etüt' : '23:00 Yat';
-      const mesaj = `Sayın Velimiz, öğrenciniz ${ogr.adSoyad} pansiyonumuzun bu akşamki (${seansAdi}) yoklamasında bulunamamıştır. Lütfen nöbetçi belletmen ile iletişime geçiniz.`;
-      
-      for (const targetUrl of [TUNNEL_URL, 'http://localhost:3001']) {
-        try {
-          const res = await fetch(`${targetUrl}/send-otp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: ogr.veliTelefon, code: mesaj })
-          });
-          if (res.ok) {
-            basarili++;
-            break;
-          }
-        } catch {}
+    try {
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ogrenciler: yokOlanlar, seans })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBilgiMesaji(data.message);
+      } else {
+        setBilgiMesaji(data.message || 'Bildirim gönderilemedi.');
       }
+    } catch {
+      setBilgiMesaji('Bildirim sunucusuna ulaşılamadı.');
+    } finally {
+      setSendingAlerts(false);
+      setTimeout(() => setBilgiMesaji(''), 6000);
     }
-
-    setSendingAlerts(false);
-    setBilgiMesaji(`${basarili} öğrenci velisine WhatsApp uyarısı iletildi.`);
-    setTimeout(() => setBilgiMesaji(''), 5000);
   };
 
   return (
