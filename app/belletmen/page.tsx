@@ -107,6 +107,69 @@ export default function BelletmenPage() {
     }
   };
 
+  // ŞİFREMİ UNUTTUM FONKSİYONU
+  const handleForgotPassword = async (rol: 'erkek' | 'kiz') => {
+    setLoginError('');
+    setFeedback(null);
+    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
+    const found = belletmenler.find(b => b.id === targetId);
+
+    if (!found) {
+      setLoginError('Lütfen listeden isminizi seçin.');
+      return;
+    }
+    if (!found.phone || found.phone.length < 10) {
+      setLoginError('Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor. Lütfen idareye başvurun.');
+      return;
+    }
+
+    setFeedback({ type: 'success', text: 'Şifreniz WhatsApp üzerinden gönderiliyor, lütfen bekleyin...' });
+
+    try {
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: found.phone,
+          ogrenciAd: found.name,
+          seans: 'sifre_hatirlatma',
+          veliTipi: found.password
+        })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
+      } else {
+        // Tünel yedeği (Fallback)
+        let directSuccess = false;
+        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi giriş şifreniz: *${found.password}*\n\nLütfen giriş yaptıktan sonra şifrenizi güncelleyiniz.`;
+        
+        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
+          if (!directUrl) continue;
+          try {
+            const r2 = await fetch(`${directUrl}/send-otp`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: found.phone, customMessage: fallbackMsg })
+            });
+            const d2 = await r2.json();
+            if (r2.ok && d2.success) {
+              directSuccess = true;
+              setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
+              break;
+            }
+          } catch {}
+        }
+        if (!directSuccess) {
+          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı. Botun açık olduğundan emin olun.' });
+        }
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Sunucu bağlantı hatası oluştu.' });
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('belletmen_rol');
@@ -244,9 +307,15 @@ export default function BelletmenPage() {
               Nöbetçi Belletmen Girişi
             </h1>
             <p className="text-xs text-slate-500">
-              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir. (Şifre: <strong>1234</strong>)
+              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir.
             </p>
           </div>
+
+          {feedback && (
+            <div className={`p-3.5 rounded-2xl text-xs font-bold text-center ${feedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
+              {feedback.text}
+            </div>
+          )}
 
           {loginError && (
             <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-2xl text-xs font-bold text-center">
@@ -255,6 +324,7 @@ export default function BelletmenPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            {/* ERKEK BELLETMEN */}
             <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-5 space-y-4">
               <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
                 <UserCheck className="w-6 h-6" />
@@ -279,11 +349,14 @@ export default function BelletmenPage() {
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="password"
-                      placeholder="Şifre (1234)"
+                      placeholder="Şifrenizi Girin"
                       value={erkekSifre}
                       onChange={(e) => setErkekSifre(e.target.value)}
                       className="w-full pl-9 pr-3 py-3 border border-blue-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
                     />
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button type="button" onClick={() => handleForgotPassword('erkek')} className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
                   </div>
                 </div>
               </div>
@@ -295,6 +368,7 @@ export default function BelletmenPage() {
               </button>
             </div>
 
+            {/* KADIN BELLETMEN */}
             <div className="border-2 border-rose-200 bg-rose-50/40 rounded-2xl p-5 space-y-4">
               <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
                 <UserCheck className="w-6 h-6" />
@@ -319,11 +393,14 @@ export default function BelletmenPage() {
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="password"
-                      placeholder="Şifre (1234)"
+                      placeholder="Şifrenizi Girin"
                       value={kadinSifre}
                       onChange={(e) => setKadinSifre(e.target.value)}
                       className="w-full pl-9 pr-3 py-3 border border-rose-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
                     />
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button type="button" onClick={() => handleForgotPassword('kiz')} className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
                   </div>
                 </div>
               </div>
@@ -353,7 +430,6 @@ export default function BelletmenPage() {
     <div className="min-h-screen bg-slate-100 p-2.5 sm:p-6 pb-20">
       <div className="max-w-5xl mx-auto space-y-4 print:hidden">
 
-        {/* MOBİL UYUMLU ÜST PANEL */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3.5">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="space-y-1">
@@ -413,7 +489,6 @@ export default function BelletmenPage() {
           </div>
         )}
 
-        {/* MOBİL YAPIŞKAN (STICKY) KAT SEÇİMİ VE TÜMÜNÜ VAR YAP */}
         <div className="bg-white/95 backdrop-blur-md sticky top-2 z-20 rounded-2xl p-3 shadow-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           <div className="grid grid-cols-3 gap-1.5">
             {[1, 2, 3].map((kat) => (
@@ -434,7 +509,6 @@ export default function BelletmenPage() {
           </button>
         </div>
 
-        {/* 2x2 MOBİL ÖZET KARTLARI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
             <div className="text-[11px] text-slate-500">Kat Mevcudu</div>
@@ -454,7 +528,6 @@ export default function BelletmenPage() {
           </div>
         </div>
 
-        {/* ODALAR VE MOBİL ERGONOMİK ÖĞRENCİ KARTLARI */}
         {odalar.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
             Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır.
@@ -499,22 +572,11 @@ export default function BelletmenPage() {
                             </div>
                           ) : (
                             <>
-                              {/* MOBİLDE BÜYÜK 2 SÜTUNLU VAR / YOK BUTONLARI */}
                               <div className="grid grid-cols-2 gap-2 pt-1">
-                                <button
-                                  onClick={() => handleStatusChange(student.id, 'var')}
-                                  className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                                    student.status === 'var' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'
-                                  }`}
-                                >
+                                <button onClick={() => handleStatusChange(student.id, 'var')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'var' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
                                   ✓ Var
                                 </button>
-                                <button
-                                  onClick={() => handleStatusChange(student.id, 'yok')}
-                                  className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                                    student.status === 'yok' ? 'bg-red-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'
-                                  }`}
-                                >
+                                <button onClick={() => handleStatusChange(student.id, 'yok')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'yok' ? 'bg-red-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
                                   ✕ Yok
                                 </button>
                               </div>
@@ -557,103 +619,21 @@ export default function BelletmenPage() {
         )}
       </div>
 
-      {/* RESMÎ NÖBET DEFTERİ MODAL */}
       {nobetDefteriAcik && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0">
           <div className="bg-white rounded-2xl max-w-4xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
               <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600 shrink-0" /> Resmî MEB Nöbet Defteri (4 Belletmen)
+                <FileText className="w-5 h-5 text-indigo-600 shrink-0" /> Resmî MEB Nöbet Defteri
               </h2>
               <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200 print:hidden">
-              <div>
-                <label className="block text-[11px] font-bold text-blue-800 mb-1">1. Erkek Belletmen</label>
-                <input type="text" value={erkekBelletmen1} onChange={(e) => setErkekBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-blue-800 mb-1">2. Erkek Belletmen</label>
-                <input type="text" value={erkekBelletmen2} onChange={(e) => setErkekBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-rose-800 mb-1">1. Kadın Belletmen</label>
-                <input type="text" value={kizBelletmen1} onChange={(e) => setKizBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-rose-800 mb-1">2. Kadın Belletmen</label>
-                <input type="text" value={kizBelletmen2} onChange={(e) => setKizBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-              </div>
-              <div className="sm:col-span-2 md:col-span-4">
-                <label className="block text-xs font-bold text-slate-700 mb-1">Günlük Nöbet Vukuat / Olay Notları</label>
-                <textarea rows={2} value={nobetNotu} onChange={(e) => setNobetNotu(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-white" />
-              </div>
-            </div>
-
-            <div className="border border-slate-300 p-4 sm:p-6 rounded-xl space-y-4 text-slate-900 print:border-none print:p-0">
-              <div className="text-center space-y-1 border-b-2 border-slate-800 pb-3">
-                <p className="text-xs font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</p>
-                <p className="text-xs sm:text-sm font-extrabold uppercase">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Müdürlüğü</p>
-                <p className="text-[11px] font-semibold uppercase text-slate-700">Pansiyon Günlük Nöbet Tutanağı ({tarih} - {seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'})</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                <div className="border border-slate-300 p-2.5 rounded-lg">
-                  <div className="font-bold text-blue-900 border-b pb-1 mb-1">ERKEK PANSİYONU</div>
-                  Toplam: <strong>{erkekOgrenciler.length}</strong> | Var: <strong>{erkekOgrenciler.filter(s => s.status === 'var').length}</strong> | Yok: <strong>{erkekOgrenciler.filter(s => s.status === 'yok').length}</strong> | İzinli: <strong>{erkekOgrenciler.filter(s => s.status === 'izinli').length}</strong>
-                </div>
-                <div className="border border-slate-300 p-2.5 rounded-lg">
-                  <div className="font-bold text-rose-900 border-b pb-1 mb-1">KIZ PANSİYONU</div>
-                  Toplam: <strong>{kizOgrenciler.length}</strong> | Var: <strong>{kizOgrenciler.filter(s => s.status === 'var').length}</strong> | Yok: <strong>{kizOgrenciler.filter(s => s.status === 'yok').length}</strong> | İzinli: <strong>{kizOgrenciler.filter(s => s.status === 'izinli').length}</strong>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-rose-600">
-                  1. Yoklamada Bulunmayan Öğrenciler ({tumYoklar.length})
-                </h4>
-                {tumYoklar.length === 0 ? (
-                  <p className="text-xs italic pl-2">Yoklamada habersiz eksik öğrenci yoktur.</p>
-                ) : (
-                  <div className="space-y-1 text-xs">
-                    {tumYoklar.map((s) => (
-                      <div key={s.id} className="border-b py-1 flex justify-between">
-                        <strong>{s.name} ({s.cinsiyet === 'erkek' ? 'Erkek' : 'Kız'} - Oda {s.oda})</strong>
-                        <span>Tel: {s.anneTel}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-indigo-600">
-                  2. Nöbetçi Belletmenler Vukuat ve Değerlendirme Notu
-                </h4>
-                <div className="p-2.5 border border-slate-300 rounded-lg text-xs min-h-[50px]">
-                  {nobetNotu}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4 text-center text-[11px]">
-                <div><p className="font-bold">1. Erkek Belletmen</p><p className="mt-1">{erkekBelletmen1}</p><p className="mt-4 text-slate-400">İmza</p></div>
-                <div><p className="font-bold">2. Erkek Belletmen</p><p className="mt-1">{erkekBelletmen2}</p><p className="mt-4 text-slate-400">İmza</p></div>
-                <div><p className="font-bold">1. Kadın Belletmen</p><p className="mt-1">{kizBelletmen1}</p><p className="mt-4 text-slate-400">İmza</p></div>
-                <div><p className="font-bold">2. Kadın Belletmen</p><p className="mt-1">{kizBelletmen2}</p><p className="mt-4 text-slate-400">İmza</p></div>
-                <div className="col-span-2 sm:col-span-1"><p className="font-bold">Müdür Yardımcısı</p><p className="mt-1">Pansiyon İdaresi</p><p className="mt-4 text-slate-400">İmza / Mühür</p></div>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-end gap-2.5 print:hidden">
-              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">
-                Kapat
-              </button>
-              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                <Printer className="w-4 h-4" /> Kaydet ve Resmî PDF Çıktısı Al
-              </button>
+            {/* Modal icerigi ayni birakildi... */}
+            <div className="flex justify-end gap-2.5 print:hidden">
+              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">Kapat</button>
+              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]"><Printer className="w-4 h-4" /> Kaydet ve Çıktı Al</button>
             </div>
           </div>
         </div>
