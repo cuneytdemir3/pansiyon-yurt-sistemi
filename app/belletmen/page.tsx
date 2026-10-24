@@ -179,7 +179,28 @@ export default function BelletmenPage() {
         setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
         setFeedback({ type: 'success', text: data.message });
       } else {
-        setFeedback({ type: 'error', text: data.message || 'Mesaj iletilemedi.' });
+        // Sunucu ulaşamadıysa doğrudan tarayıcıdan aktif Tünel veya Localhost:3001'e gönder
+        let directSuccess = false;
+        const fallbackMsg = data.customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${veliTipi}), öğrenciniz *${student.name}* (Oda: ${student.oda}) *${tarih}* tarihli yoklamada pansiyonda *BULUNAMAMIŞTIR (YOK)*.`;
+        for (const directUrl of [data.tunnelUrl || 'https://scanner-intimate-nova-holders.trycloudflare.com', 'http://localhost:3001', 'http://127.0.0.1:3001']) {
+          try {
+            const r2 = await fetch(`${directUrl}/send-otp`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone, customMessage: fallbackMsg })
+            });
+            const d2 = await r2.json();
+            if (r2.ok && d2.success) {
+              directSuccess = true;
+              setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
+              setFeedback({ type: 'success', text: `✅ ${student.name} velisine (${phone}) WhatsApp bildirimi başarıyla gönderildi!` });
+              break;
+            }
+          } catch {}
+        }
+        if (!directSuccess) {
+          setFeedback({ type: 'error', text: 'WhatsApp Botu henüz hazır değil! Lütfen açık olan Chrome penceresinde WhatsApp sohbetlerinizin yüklendiğinden emin olun.' });
+        }
       }
     } catch {
       setFeedback({ type: 'error', text: 'Bağlantı hatası oluştu.' });

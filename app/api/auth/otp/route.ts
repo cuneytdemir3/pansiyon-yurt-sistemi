@@ -8,7 +8,7 @@ if (!globalThis.__otpStorage) {
   globalThis.__otpStorage = {};
 }
 
-const PUBLIC_BOT_URL = process.env.WHATSAPP_BOT_URL || 'https://envelope-deserve-unknown-answered.trycloudflare.com';
+const PUBLIC_BOT_URL = 'https://scanner-intimate-nova-holders.trycloudflare.com';
 
 export async function POST(request: Request) {
   try {
@@ -27,11 +27,7 @@ export async function POST(request: Request) {
     let sentViaBot = false;
     let botError = '';
 
-    // Önce Canlı HTTPS Tünelinden (Vercel -> Bilgisayarınızdaki Bot) göndermeyi dene
-    const urlsToTry = [PUBLIC_BOT_URL, 'http://127.0.0.1:3001'];
-
-    for (const baseUrl of urlsToTry) {
-      if (!baseUrl) continue;
+    for (const baseUrl of [PUBLIC_BOT_URL, 'http://127.0.0.1:3001']) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       try {

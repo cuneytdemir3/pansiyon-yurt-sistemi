@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BOT_URLS = ['https://porcelain-athens-cattle-this.trycloudflare.com', 'http://127.0.0.1:3001'];
+const BOT_URLS = ['https://scanner-intimate-nova-holders.trycloudflare.com', 'http://127.0.0.1:3001', 'http://localhost:3001'];
 
 export async function POST(request: Request) {
   try {
@@ -43,7 +43,12 @@ export async function POST(request: Request) {
       } catch (e) {}
     }
 
-    return NextResponse.json({ success: false, message: lastError }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      message: lastError,
+      customMessage,
+      tunnelUrl: 'https://scanner-intimate-nova-holders.trycloudflare.com'
+    }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
