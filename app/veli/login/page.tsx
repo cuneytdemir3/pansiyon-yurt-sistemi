@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Phone, CheckCircle, ArrowRight } from 'lucide-react';
 
+const TUNNEL_URL = 'https://envelope-deserve-unknown-answered.trycloudflare.com';
+
 export default function VeliLoginPage() {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');
@@ -10,17 +12,15 @@ export default function VeliLoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [fallbackHint, setFallbackHint] = useState('');
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || phone.replace(/\D/g, '').length < 10) {
-      setErrorMsg('Lütfen geçerli bir telefon numarası girin (Örn: 0555 111 22 33).');
+      setErrorMsg('Lütfen geçerli bir telefon numarası girin (Örn: 0541 657 14 69).');
       return;
     }
     setLoading(true);
     setErrorMsg('');
-    setFallbackHint('');
 
     try {
       const res = await fetch('/api/auth/otp', {
@@ -33,35 +33,41 @@ export default function VeliLoginPage() {
       if (data.success) {
         let delivered = data.sentViaBot;
 
-        // Eğer sunucu doğrudan bota ulaşamadıysa (Vercel'deyse), bilgisayardaki yerel bota tarayıcıdan istek at
+        // Sunucu ulaşamadıysa tarayıcıdan HTTPS Tünel adresine istek at
         if (!delivered && data.otpCode) {
-          try {
-            const localBotRes = await fetch('http://localhost:3001/send-otp', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, code: data.otpCode }),
-            });
-            const localBotData = await localBotRes.json();
-            if (localBotData.success) {
-              delivered = true;
+          for (const url of [TUNNEL_URL, 'http://localhost:3001']) {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 6000);
+            try {
+              const botRes = await fetch(`${url}/send-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, code: data.otpCode }),
+                signal: controller.signal,
+              });
+              clearTimeout(tid);
+              const botData = await botRes.json();
+              if (botData.success) {
+                delivered = true;
+                break;
+              }
+            } catch {
+              clearTimeout(tid);
             }
-          } catch {
-            // Yerel bot kapalıysa
           }
         }
 
-        setStep('otp');
         if (delivered) {
+          setStep('otp');
           setSuccessMsg('Tek kullanımlık şifreniz WhatsApp numaranıza başarıyla gönderildi!');
         } else {
-          setSuccessMsg('Doğrulama kodu oluşturuldu (WhatsApp Botu kapalı olduğu için yedek mod aktif).');
-          setFallbackHint(data.otpCode);
+          setErrorMsg('WhatsApp Botuna ulaşılamadı. Lütfen bilgisayarda WhatsApp Bot penceresinin açık olduğundan emin olun.');
         }
       } else {
         setErrorMsg(data.message || 'Kod gönderilemedi.');
       }
     } catch {
-      setErrorMsg('Bağlantı hatası oluştu.');
+      setErrorMsg('Sunucu bağlantı hatası oluştu.');
     } finally {
       setLoading(false);
     }
@@ -69,8 +75,8 @@ export default function VeliLoginPage() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpCode || otpCode.length !== 6) {
-      setErrorMsg('Lütfen 6 haneli kodu eksiksiz girin.');
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setErrorMsg('Lütfen WhatsApp’a gelen 6 haneli kodu eksiksiz girin.');
       return;
     }
     setLoading(true);
@@ -87,10 +93,10 @@ export default function VeliLoginPage() {
         document.cookie = `token=${data.token}; path=/; max-age=604800;`;
         window.location.href = '/veli';
       } else {
-        setErrorMsg(data.message || 'Doğrulama başarısız.');
+        setErrorMsg(data.message || 'Girdiğiniz kod hatalı veya süresi dolmuş.');
       }
     } catch {
-      setErrorMsg('Hata oluştu.');
+      setErrorMsg('Doğrulama sırasında hata oluştu.');
     } finally {
       setLoading(false);
     }
@@ -109,11 +115,6 @@ export default function VeliLoginPage() {
 
         {errorMsg && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-medium">{errorMsg}</div>}
         {successMsg && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-medium">{successMsg}</div>}
-        {fallbackHint && (
-          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs text-center font-mono">
-            ⚠️ [Bot Kapalı - Yedek Kod]: <strong>{fallbackHint}</strong>
-          </div>
-        )}
 
         {step === 'phone' ? (
           <form onSubmit={handleRequestOtp} className="space-y-4">

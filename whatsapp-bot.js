@@ -3,7 +3,6 @@ const qrcode = require('qrcode-terminal');
 const http = require('http');
 const fs = require('fs');
 
-// Bilgisayarda yüklü olan Chrome veya Edge yolunu otomatik tespit et
 const possiblePaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -41,7 +40,8 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
     isReady = true;
-    console.log('\n✅ [BAŞARILI] Kişisel WhatsApp Botu bağlandı ve mesaj göndermeye hazır!\n');
+    console.log('\n✅ [BAŞARILI] WhatsApp Botu bağlandı ve mesaj göndermeye hazır!');
+    console.log('👉 Bu pencereyi KAPATMAYIN, arka planda açık kalsın.\n');
 });
 
 client.on('disconnected', () => {
@@ -53,12 +53,18 @@ client.initialize();
 
 const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
         res.writeHead(200);
         res.end();
+        return;
+    }
+
+    if (req.method === 'GET' && req.url === '/status') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ready: isReady }));
         return;
     }
 
@@ -74,26 +80,31 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 const { phone, code } = JSON.parse(body);
-                if (!phone || !code) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'Telefon veya kod eksik.' }));
-                    return;
-                }
-
-                let cleanPhone = phone.replace(/\D/g, '');
+                let cleanPhone = (phone || '').replace(/\D/g, '');
                 if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
                 if (!cleanPhone.startsWith('90')) cleanPhone = '90' + cleanPhone;
-                const chatId = `${cleanPhone}@c.us`;
+
+                console.log(`⏳ [İŞLENİYOR] ${cleanPhone} numarasına kod gönderiliyor...`);
 
                 const message = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nVeli Portalı Tek Kullanımlık Giriş Kodunuz: *${code}*\n\nBu kod 3 dakika geçerlidir. Güvenliğiniz için kimseyle paylaşmayınız.`;
 
-                await client.sendMessage(chatId, message);
+                // Numaranın WhatsApp ID'sini doğrula (Takılmayı önler)
+                const numberDetails = await client.getNumberId(cleanPhone);
+                if (!numberDetails) {
+                    console.log(`❌ [HATA] ${cleanPhone} numarası WhatsApp'ta kayıtlı değil.`);
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, message: 'Bu numara WhatsApp üzerinde bulunamadı.' }));
+                    return;
+                }
+
+                // sendSeen: false parametresi kendi numaranıza veya yeni numaralara atarken kilitlenmeyi önler
+                await client.sendMessage(numberDetails._serialized, message, { sendSeen: false });
                 console.log(`📨 [MESAJ GÖNDERİLDİ] ${cleanPhone} -> Kod: ${code}`);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, message: 'WhatsApp mesajı başarıyla gönderildi.' }));
             } catch (err) {
-                console.error('[HATA] Mesaj gönderilemedi:', err.message);
+                console.error('❌ [HATA] Mesaj gönderilemedi:', err.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, message: err.message }));
             }
@@ -105,5 +116,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(3001, () => {
-    console.log('🚀 [SUNUCU] WhatsApp Bot Köprüsü http://localhost:3001 adresinde dinleniyor...');
+    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde dinleniyor...');
 });

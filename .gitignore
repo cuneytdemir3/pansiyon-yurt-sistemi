@@ -4,3 +4,6 @@ node_modules/
 # WhatsApp Bot Oturum Dosyalari
 .wwebjs_auth/
 .wwebjs_cache/
+
+cloudflared.exe
+tunnel.log

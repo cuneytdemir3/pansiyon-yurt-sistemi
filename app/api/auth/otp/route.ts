@@ -8,6 +8,8 @@ if (!globalThis.__otpStorage) {
   globalThis.__otpStorage = {};
 }
 
+const PUBLIC_BOT_URL = process.env.WHATSAPP_BOT_URL || 'https://envelope-deserve-unknown-answered.trycloudflare.com';
+
 export async function POST(request: Request) {
   try {
     const { phone, tc } = await request.json();
@@ -17,30 +19,47 @@ export async function POST(request: Request) {
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 3 * 60 * 1000;
-    const targetKey = (phone || tc).replace(/\D/g, '');
+    let targetKey = (phone || tc).replace(/\D/g, '');
+    if (targetKey.startsWith('0')) targetKey = targetKey.substring(1);
+
     globalThis.__otpStorage![targetKey] = { code: otpCode, expiresAt };
 
     let sentViaBot = false;
-    const botUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:3001';
+    let botError = '';
 
-    try {
-      const botRes = await fetch(`${botUrl}/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: targetKey, code: otpCode }),
-      });
-      if (botRes.ok) {
-        sentViaBot = true;
+    // Önce Canlı HTTPS Tünelinden (Vercel -> Bilgisayarınızdaki Bot) göndermeyi dene
+    const urlsToTry = [PUBLIC_BOT_URL, 'http://127.0.0.1:3001'];
+
+    for (const baseUrl of urlsToTry) {
+      if (!baseUrl) continue;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      try {
+        const botRes = await fetch(`${baseUrl}/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: targetKey, code: otpCode }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const botData = await botRes.json();
+        if (botRes.ok && botData.success) {
+          sentViaBot = true;
+          break;
+        } else {
+          botError = botData.message || 'Bot yanıt vermedi.';
+        }
+      } catch {
+        clearTimeout(timeoutId);
       }
-    } catch {
-      // Sunucu Vercel'de ise localhost'a erişemez, istemci (tarayıcı) köprüsü devreye girecek
     }
 
     return NextResponse.json({
       success: true,
       sentViaBot,
-      message: 'Doğrulama kodu üretildi.',
-      otpCode, // Yerel WhatsApp bot köprüsünün iletmesi için
+      botError,
+      otpCode,
+      tunnelUrl: PUBLIC_BOT_URL
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
@@ -50,10 +69,12 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { phone, tc, code } = await request.json();
-    const targetKey = (phone || tc).replace(/\D/g, '');
+    let targetKey = (phone || tc).replace(/\D/g, '');
+    if (targetKey.startsWith('0')) targetKey = targetKey.substring(1);
+
     const record = globalThis.__otpStorage?.[targetKey];
 
-    if (!record || Date.now() > record.expiresAt || record.code !== code) {
+    if (!record || Date.now() > record.expiresAt || record.code !== code.trim()) {
       return NextResponse.json({ success: false, message: 'Kod hatalı veya süresi dolmuş.' }, { status: 400 });
     }
 
