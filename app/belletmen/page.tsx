@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X, LogOut, UserCheck, Users, RefreshCw } from 'lucide-react';
+import {
+  Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2,
+  Phone, Printer, X, LogOut, UserCheck, Lock, RefreshCw
+} from 'lucide-react';
 
 interface Student {
   id: string;
@@ -20,9 +23,20 @@ interface Student {
 
 export default function BelletmenPage() {
   const [aktifRol, setAktifRol] = useState<'erkek' | 'kiz' | null>(null);
+  const [aktifBelletmenAd, setAktifBelletmenAd] = useState<string>('');
+
   const [students, setStudents] = useState<Student[]>([]);
+  const [belletmenler, setBelletmenler] = useState<any[]>([]);
+  const [aylikNobetler, setAylikNobetler] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
-  const [nobetciler, setNobetciler] = useState<any[]>([]);
+
+  // Giriş Form State
+  const [secilenErkekId, setSecilenErkekId] = useState<string>('');
+  const [erkekSifre, setErkekSifre] = useState<string>('');
+  const [secilenKadinId, setSecilenKadinId] = useState<string>('');
+  const [kadinSifre, setKadinSifre] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+
   const [selectedKat, setSelectedKat] = useState<number>(1);
   const [tarih, setTarih] = useState<string>('2026-10-24');
   const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
@@ -30,49 +44,71 @@ export default function BelletmenPage() {
   const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Her Gün 2 Erkek + 2 Kadın Belletmen
   const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
   const [erkekBelletmen1, setErkekBelletmen1] = useState('Cüneyt DEMİR');
   const [erkekBelletmen2, setErkekBelletmen2] = useState('Ali BEY');
   const [kizBelletmen1, setKizBelletmen1] = useState('Ayşenur KAYA');
   const [kizBelletmen2, setKizBelletmen2] = useState('Fatma YILMAZ');
-  const [nobetNotu, setNobetNotu] = useState('Erkek ve Kız pansiyonu akşam etüt ve yat yoklamaları 2 erkek ve 2 kadın nöbetçi belletmen öğretmen tarafından zamanında alındı. Katlarda asayiş sağlandı.');
+  const [nobetNotu, setNobetNotu] = useState('Erkek ve Kız pansiyonu akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı.');
 
   const loadData = async () => {
     try {
       const res = await fetch('/api/pansiyon');
       const data = await res.json();
       if (data.success && data.store) {
-        setStudents(data.store.students);
-        setLeaves(data.store.leaves);
-        setNobetciler(data.store.nobetciler || []);
+        setStudents(data.store.students || []);
+        setLeaves(data.store.leaves || []);
+        const bList = data.store.belletmenler || [];
+        setBelletmenler(bList);
+        setAylikNobetler(data.store.aylikNobetler || []);
+
+        const firstErkek = bList.find((b: any) => b.cinsiyet === 'erkek');
+        const firstKadin = bList.find((b: any) => b.cinsiyet === 'kadin');
+        if (firstErkek) setSecilenErkekId(firstErkek.id);
+        if (firstKadin) setSecilenKadinId(firstKadin.id);
       }
     } catch {}
   };
 
   useEffect(() => {
     loadData();
-    const savedRole = localStorage.getItem('belletmen_rol');
-    if (savedRole === 'erkek' || savedRole === 'kiz') {
-      setAktifRol(savedRole);
-    }
   }, []);
 
-  const handleSelectRole = (rol: 'erkek' | 'kiz') => {
-    setAktifRol(rol);
-    localStorage.setItem('belletmen_rol', rol);
-  };
+  // Seçili tarihe göre aylık nöbet listesinden o günün 4 nöbetçisini otomatik getir
+  useEffect(() => {
+    const gunKaydi = aylikNobetler.find((d) => d.tarih === tarih);
+    if (gunKaydi) {
+      setErkekBelletmen1(gunKaydi.erkek1);
+      setErkekBelletmen2(gunKaydi.erkek2);
+      setKizBelletmen1(gunKaydi.kadin1);
+      setKizBelletmen2(gunKaydi.kadin2);
+    }
+  }, [tarih, aylikNobetler]);
 
-  const handleSwitchRole = () => {
-    localStorage.removeItem('belletmen_rol');
-    setAktifRol(null);
-    setFeedback(null);
+  const handleLogin = async (rol: 'erkek' | 'kiz') => {
+    setLoginError('');
+    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
+    const targetPass = rol === 'erkek' ? erkekSifre : kadinSifre;
+
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'belletmen_login', id: targetId, password: targetPass }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      setAktifRol(rol);
+      setAktifBelletmenAd(data.belletmen.name);
+    } else {
+      setLoginError(data.message || 'Şifre hatalı!');
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    localStorage.removeItem('belletmen_rol');
-    document.cookie = 'token=; path=/; max-age=0;';
+    setAktifRol(null);
+    setErkekSifre('');
+    setKadinSifre('');
     window.location.href = '/';
   };
 
@@ -86,7 +122,6 @@ export default function BelletmenPage() {
     return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
   });
 
-  // Erkek Belletmen sadece Erkekleri, Kadın Belletmen sadece Kızları görür
   const roleFilteredStudents = enrichedStudents.filter((s) => s.cinsiyet === aktifRol);
   const katStudents = roleFilteredStudents.filter((s) => s.kat === selectedKat);
 
@@ -125,7 +160,7 @@ export default function BelletmenPage() {
       return s;
     });
     syncAttendance(updated);
-    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' olarak işaretlendi.` });
+    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' yapıldı.` });
   };
 
   const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
@@ -171,93 +206,118 @@ export default function BelletmenPage() {
     window.print();
   };
 
+  const erkekBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'erkek');
+  const kadinBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'kadin');
+
   if (!aktifRol) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-6 md:p-10 space-y-8">
+        <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-6 md:p-10 space-y-6">
           <div className="text-center space-y-2">
             <span className="text-xs font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full border border-indigo-200">
               Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu
             </span>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 mt-2">
-              Nöbetçi Belletmen Giriş Seçimi (2 Erkek + 2 Kadın Belletmen)
+              Nöbetçi Belletmen Şifreli Giriş Ekranı
             </h1>
-            <p className="text-xs md:text-sm text-slate-500 max-w-xl mx-auto">
-              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir.
+            <p className="text-xs text-slate-500">
+              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir. (Varsayılan Test Şifresi: <strong>1234</strong>)
             </p>
           </div>
 
+          {loginError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-2xl text-xs font-bold text-center">
+              ❌ {loginError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 1) ERKEK BELLETMENLER KARTI */}
-            <div className="border-2 border-blue-200 hover:border-blue-600 bg-blue-50/40 rounded-2xl p-6 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
-                  <UserCheck className="w-6 h-6" />
+            {/* ERKEK BELLETMEN ŞİFRELİ GİRİŞ */}
+            <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-6 space-y-4">
+              <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                <UserCheck className="w-6 h-6" />
+              </div>
+              <h2 className="text-lg font-extrabold text-blue-950">1) Erkek Belletmen Girişi</h2>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Erkek Belletmen Seçin:</label>
+                  <select
+                    value={secilenErkekId}
+                    onChange={(e) => setSecilenErkekId(e.target.value)}
+                    className="w-full border border-blue-300 rounded-xl px-3 py-2.5 font-bold bg-white"
+                  >
+                    {erkekBelletmenler.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
+                    ))}
+                  </select>
                 </div>
-                <h2 className="text-lg font-extrabold text-blue-950">1) Erkek Belletmen Girişi (2 Öğretmen)</h2>
-                <p className="text-xs text-slate-600">Sadece Erkek Pansiyonu odalarını ve erkek öğrencileri listeler.</p>
-                <div className="space-y-2 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">1. Nöbetçi Erkek Belletmen:</label>
-                    <input type="text" value={erkekBelletmen1} onChange={(e) => setErkekBelletmen1(e.target.value)} className="w-full border border-blue-300 rounded-xl px-3 py-2 text-xs font-bold bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">2. Nöbetçi Erkek Belletmen:</label>
-                    <input type="text" value={erkekBelletmen2} onChange={(e) => setErkekBelletmen2(e.target.value)} className="w-full border border-blue-300 rounded-xl px-3 py-2 text-xs font-bold bg-white" />
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      placeholder="Şifreniz (Varsayılan: 1234)"
+                      value={erkekSifre}
+                      onChange={(e) => setErkekSifre(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 border border-blue-300 rounded-xl bg-white font-mono"
+                    />
                   </div>
                 </div>
               </div>
-              <button onClick={() => handleSelectRole('erkek')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs cursor-pointer">
-                Erkek Öğrenci Yoklamasına Gir →
+              <button
+                onClick={() => handleLogin('erkek')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs cursor-pointer"
+              >
+                Erkek Pansiyonu Yoklamasına Giriş Yap →
               </button>
             </div>
 
-            {/* 2) KADIN BELLETMENLER KARTI */}
-            <div className="border-2 border-rose-200 hover:border-rose-600 bg-rose-50/40 rounded-2xl p-6 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
-                  <UserCheck className="w-6 h-6" />
+            {/* KADIN BELLETMEN ŞİFRELİ GİRİŞ */}
+            <div className="border-2 border-rose-200 bg-rose-50/40 rounded-2xl p-6 space-y-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
+                <UserCheck className="w-6 h-6" />
+              </div>
+              <h2 className="text-lg font-extrabold text-rose-950">2) Kadın Belletmen Girişi</h2>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Kadın Belletmen Seçin:</label>
+                  <select
+                    value={secilenKadinId}
+                    onChange={(e) => setSecilenKadinId(e.target.value)}
+                    className="w-full border border-rose-300 rounded-xl px-3 py-2.5 font-bold bg-white"
+                  >
+                    {kadinBelletmenler.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
+                    ))}
+                  </select>
                 </div>
-                <h2 className="text-lg font-extrabold text-rose-950">2) Kadın Belletmen Girişi (2 Öğretmen)</h2>
-                <p className="text-xs text-slate-600">Sadece Kız Pansiyonu odalarını ve kız öğrencileri listeler.</p>
-                <div className="space-y-2 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">1. Nöbetçi Kadın Belletmen:</label>
-                    <input type="text" value={kizBelletmen1} onChange={(e) => setKizBelletmen1(e.target.value)} className="w-full border border-rose-300 rounded-xl px-3 py-2 text-xs font-bold bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">2. Nöbetçi Kadın Belletmen:</label>
-                    <input type="text" value={kizBelletmen2} onChange={(e) => setKizBelletmen2(e.target.value)} className="w-full border border-rose-300 rounded-xl px-3 py-2 text-xs font-bold bg-white" />
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      placeholder="Şifreniz (Varsayılan: 1234)"
+                      value={kadinSifre}
+                      onChange={(e) => setKadinSifre(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 border border-rose-300 rounded-xl bg-white font-mono"
+                    />
                   </div>
                 </div>
               </div>
-              <button onClick={() => handleSelectRole('kiz')} className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl text-xs cursor-pointer">
-                Kız Öğrenci Yoklamasına Gir →
+              <button
+                onClick={() => handleLogin('kiz')}
+                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl text-xs cursor-pointer"
+              >
+                Kız Pansiyonu Yoklamasına Giriş Yap →
               </button>
-            </div>
-          </div>
-
-          {/* Haftalık 4 Belletmen Nöbet Çizelgesi */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-            <h3 className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-indigo-600" /> Haftalık Nöbet Çizelgesi (Her Gün 2 Erkek + 2 Kadın Belletmen)
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-              {nobetciler.map((n, i) => (
-                <div key={i} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-0.5">
-                  <div className="font-extrabold text-slate-900 border-b border-slate-100 pb-1 mb-1">{n.gun}</div>
-                  <div className="text-blue-700 font-semibold">👨 1. {n.erkek1}</div>
-                  <div className="text-blue-700 font-semibold">👨 2. {n.erkek2}</div>
-                  <div className="text-rose-700 font-semibold pt-0.5">👩 1. {n.kadin1}</div>
-                  <div className="text-rose-700 font-semibold">👩 2. {n.kadin2}</div>
-                </div>
-              ))}
             </div>
           </div>
 
           <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
             <a href="/veli" className="text-emerald-700 font-bold hover:underline">← Veli İzin Portalı</a>
-            <a href="/admin" className="text-indigo-700 font-bold hover:underline">Yönetici (Admin) Paneli →</a>
+            <a href="/admin" className="text-indigo-700 font-bold hover:underline">Yönetici Paneli (Şifre & Aylık Nöbet Yönetimi) →</a>
           </div>
         </div>
       </div>
@@ -278,8 +338,8 @@ export default function BelletmenPage() {
             <div>
               <span className={`text-xs font-extrabold px-3 py-1 rounded-full ${aktifRol === 'erkek' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
                 {aktifRol === 'erkek'
-                  ? `👨 Nöbetçi Erkek Belletmenler: ${erkekBelletmen1} & ${erkekBelletmen2}`
-                  : `👩 Nöbetçi Kadın Belletmenler: ${kizBelletmen1} & ${kizBelletmen2}`}
+                  ? `👨 Aktif Erkek Belletmen: ${aktifBelletmenAd} (Günlük Nöbetçiler: ${erkekBelletmen1} & ${erkekBelletmen2})`
+                  : `👩 Aktif Kadın Belletmen: ${aktifBelletmenAd} (Günlük Nöbetçiler: ${kizBelletmen1} & ${kizBelletmen2})`}
               </span>
               <h1 className="text-lg md:text-xl font-bold text-slate-800 mt-1.5">
                 {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklama Ekranı
@@ -287,8 +347,8 @@ export default function BelletmenPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={handleSwitchRole} className="flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl cursor-pointer">
-                <RefreshCw className="w-3.5 h-3.5" /> Belletmen Grubu Değiştir
+              <button onClick={() => setAktifRol(null)} className="flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl cursor-pointer">
+                <RefreshCw className="w-3.5 h-3.5" /> Belletmen Değiştir
               </button>
               <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-200">
                 Yönetici Paneli
@@ -544,43 +604,14 @@ export default function BelletmenPage() {
               </div>
 
               <div className="space-y-1.5">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-amber-500">
-                  2. İzinli Öğrenciler ({tumIzinliler.length})
-                </h4>
-                {tumIzinliler.length === 0 ? (
-                  <p className="text-xs italic pl-2">İzinli öğrenci yoktur.</p>
-                ) : (
-                  <table className="w-full text-xs border-collapse border border-slate-300">
-                    <thead>
-                      <tr className="bg-slate-100">
-                        <th className="border border-slate-300 p-1 text-left">Ad Soyad</th>
-                        <th className="border border-slate-300 p-1 text-left">Oda</th>
-                        <th className="border border-slate-300 p-1 text-left">İzin Detayı</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tumIzinliler.map((s) => (
-                        <tr key={s.id}>
-                          <td className="border border-slate-300 p-1 font-bold">{s.name}</td>
-                          <td className="border border-slate-300 p-1">Oda {s.oda}</td>
-                          <td className="border border-slate-300 p-1">{s.izinAciklama}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
                 <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-indigo-600">
-                  3. Nöbetçi Belletmenler Günlük Vukuat ve Değerlendirme Notu
+                  2. Nöbetçi Belletmenler Günlük Vukuat ve Değerlendirme Notu
                 </h4>
                 <div className="p-2.5 border border-slate-300 rounded-lg text-xs min-h-[55px]">
                   {nobetNotu}
                 </div>
               </div>
 
-              {/* 4 BELLETMEN (2 ERKEK + 2 KADIN) VE MÜDÜR YARDIMCISI İMZA BLOĞU */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 pt-6 text-center text-[11px]">
                 <div>
                   <p className="font-bold">1. Erkek Belletmen</p>
