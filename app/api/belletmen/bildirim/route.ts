@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BOT_URLS = ['https://preventing-maria-lloyd-wheels.trycloudflare.com', 'http://127.0.0.1:3001', 'http://localhost:3001'];
+const BOT_URLS = ['https://editor-rain-editing-package.trycloudflare.com', 'http://127.0.0.1:3001', 'http://localhost:3001'];
 
 export async function POST(request: Request) {
   try {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       success: false,
       message: lastError,
       customMessage,
-      tunnelUrl: 'https://preventing-maria-lloyd-wheels.trycloudflare.com'
+      tunnelUrl: 'https://editor-rain-editing-package.trycloudflare.com'
     }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
