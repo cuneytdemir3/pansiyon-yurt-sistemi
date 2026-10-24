@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   MessageCircle,
   Sparkles,
-  ArrowRight,
   Lock,
   CheckCircle2,
   X,
@@ -22,28 +21,24 @@ export default function PansiyonLoginPortalPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
 
-  // Veli WhatsApp OTP State
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState<'request' | 'verify'>('request');
   const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Belletmen Giriş State
   const [belletmenList, setBelletmenList] = useState<any[]>([
-    { id: 'b1', name: 'Mustafa Demir', cinsiyet: 'erkek', brans: 'Erkek Pansiyonu' },
-    { id: 'b2', name: 'Cüneyt DEMİR', cinsiyet: 'erkek', brans: 'Bilişim Teknolojileri' },
-    { id: 'b3', name: 'Kübra Güllü', cinsiyet: 'kadin', brans: 'Kız Pansiyonu' },
-    { id: 'b4', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat' },
+    { id: 'b1', name: 'Cüneyt DEMİR', cinsiyet: 'erkek', brans: 'Bilişim Teknolojileri' },
+    { id: 'b2', name: 'Ali BEY', cinsiyet: 'erkek', brans: 'Matematik' },
+    { id: 'b5', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat' },
+    { id: 'b6', name: 'Fatma YILMAZ', cinsiyet: 'kadin', brans: 'İngilizce' },
   ]);
-  const [selectedBelletmen, setSelectedBelletmen] = useState('Mustafa Demir');
+  const [selectedBelletmen, setSelectedBelletmen] = useState('Cüneyt DEMİR');
   const [belletmenPass, setBelletmenPass] = useState('');
 
-  // Yönetici Giriş State
   const [adminUser, setAdminUser] = useState('admin');
   const [adminPass, setAdminPass] = useState('');
 
-  // Yurt AI Asistanı Modal State
   const [aiOpen, setAiOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiMessages, setAiMessages] = useState<{ sender: 'bot' | 'user'; text: string }[]>([
@@ -59,6 +54,7 @@ export default function PansiyonLoginPortalPage() {
       .then((d) => {
         if (d.success && d.store?.belletmenler?.length) {
           setBelletmenList(d.store.belletmenler);
+          setSelectedBelletmen(d.store.belletmenler[0].name);
         }
       })
       .catch(() => {});
@@ -67,7 +63,7 @@ export default function PansiyonLoginPortalPage() {
   const handleSendVeliOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || phone.replace(/\D/g, '').length < 10) {
-      setFeedback({ type: 'error', text: 'Lütfen geçerli bir cep telefonu numarası giriniz (Örn: 0541 657 14 69).' });
+      setFeedback({ type: 'error', text: 'Lütfen geçerli bir cep telefonu numarası giriniz.' });
       return;
     }
     setLoading(true);
@@ -107,7 +103,7 @@ export default function PansiyonLoginPortalPage() {
         } else {
           setFeedback({
             type: 'success',
-            text: `✅ Giriş kodunuz oluşturuldu. (WhatsApp Bot Yedek Kodu: ${data.otpCode})`
+            text: `✅ Giriş kodunuz oluşturuldu. (Yedek Kod: ${data.otpCode})`
           });
         }
       } else {
@@ -193,88 +189,87 @@ export default function PansiyonLoginPortalPage() {
         darkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#f8fafc] text-slate-800'
       }`}
     >
-      {/* ÜST BAŞLIK (HEADER) */}
+      {/* MOBİL UYUMLU ÜST BAŞLIK */}
       <header
-        className={`w-full border-b px-4 sm:px-10 py-3.5 transition-colors ${
-          darkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200/80'
+        className={`w-full border-b px-3 sm:px-8 py-3 transition-colors sticky top-0 z-30 backdrop-blur-md ${
+          darkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200/80'
         }`}
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center shadow-2xs">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
               <span className="text-xs font-black tracking-tighter text-blue-700">SBL</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className={`text-sm sm:text-base font-extrabold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className={`text-xs sm:text-base font-extrabold tracking-tight truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                   Prof. Dr. Mümtaz Turhan SBL Pansiyon
                 </h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200 shrink-0">
                   MEB Uyumlu
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
                 İzin Takip • Etüt Yoklama • Gece Yat Yoklaması • Oda Yönetimi
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <span className="hidden sm:inline text-xs font-medium text-slate-400">Güvenli Giriş Paneli</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden md:inline text-xs font-medium text-slate-400">Güvenli Giriş Paneli</span>
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer min-h-[38px] ${
                 darkMode
-                  ? 'bg-slate-800 border-slate-700 text-amber-300 hover:bg-slate-700'
-                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-slate-800 border-slate-700 text-amber-300'
+                  : 'bg-slate-100 border-slate-200 text-slate-700'
               }`}
             >
               {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-              {darkMode ? 'Aydınlık' : 'Karanlık'}
+              <span className="hidden xs:inline">{darkMode ? 'Aydınlık' : 'Karanlık'}</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* ORTA MERKEZİ KART ALANI */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
+      {/* ORTA MERKEZİ KART ALANI (Mobilde Form Üstte, Görsel Altta veya Kompakt) */}
+      <main className="flex-1 flex items-center justify-center p-3 sm:p-6 pb-20 sm:pb-6">
         <div
-          className={`max-w-[920px] w-full rounded-[28px] shadow-2xl border overflow-hidden grid grid-cols-1 md:grid-cols-12 transition-colors ${
+          className={`max-w-[920px] w-full rounded-3xl shadow-xl border overflow-hidden grid grid-cols-1 md:grid-cols-12 transition-colors ${
             darkMode
               ? 'bg-slate-900 border-slate-800 shadow-black/50'
               : 'bg-white border-slate-200/90 shadow-slate-200/80'
           }`}
         >
-          {/* SOL SÜTUN */}
+          {/* SOL SÜTUN: KURUMSAL SBL AMBLEMİ */}
           <div
-            className={`md:col-span-5 relative flex flex-col items-center justify-between p-8 text-center overflow-hidden border-b md:border-b-0 md:border-r ${
+            className={`md:col-span-5 relative flex flex-col items-center justify-between p-5 sm:p-8 text-center overflow-hidden border-b md:border-b-0 md:border-r ${
               darkMode
                 ? 'bg-gradient-to-b from-slate-900 via-blue-950/40 to-slate-900 border-slate-800'
                 : 'bg-gradient-to-b from-[#f0f7ff] via-[#e6f1fe] to-[#dcebfd] border-slate-200/60'
             }`}
           >
-            <div className="z-10 pt-4 space-y-4">
-              <div className="mx-auto w-24 h-24 rounded-3xl bg-white/90 shadow-md border border-blue-100 flex flex-col items-center justify-center p-2">
-                <div className="text-2xl font-black tracking-tighter text-[#0055a5] leading-none">SBL</div>
-                <div className="text-[8px] font-extrabold uppercase tracking-widest text-[#0055a5] mt-1">PANSİYON</div>
-                <div className="text-[7px] font-semibold text-slate-400">SOSYAL BİLİMLER LİSESİ</div>
+            <div className="z-10 pt-1 sm:pt-4 space-y-2.5 sm:space-y-4">
+              <div className="mx-auto w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-white/95 shadow-md border border-blue-100 flex flex-col items-center justify-center p-2">
+                <div className="text-xl sm:text-2xl font-black tracking-tighter text-[#0055a5] leading-none">SBL</div>
+                <div className="text-[7px] sm:text-[8px] font-extrabold uppercase tracking-widest text-[#0055a5] mt-1">PANSİYON</div>
               </div>
 
-              <div className="space-y-1">
-                <h2 className={`text-xs font-extrabold uppercase tracking-wider ${darkMode ? 'text-blue-300' : 'text-[#0f2942]'}`}>
+              <div className="space-y-0.5">
+                <h2 className={`text-[11px] sm:text-xs font-extrabold uppercase tracking-wider ${darkMode ? 'text-blue-300' : 'text-[#0f2942]'}`}>
                   PROF. DR. MÜMTAZ TURHAN
                 </h2>
-                <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-[#0f2942]'}`}>
+                <p className={`text-xs sm:text-sm font-black ${darkMode ? 'text-white' : 'text-[#0f2942]'}`}>
                   Sosyal Bilimler Lisesi Pansiyonu
                 </p>
               </div>
 
-              <div className="inline-block px-4 py-1 rounded-full bg-white/80 border border-blue-200/80 text-[11px] font-semibold text-slate-600 shadow-2xs">
+              <div className="inline-block px-3.5 py-1 rounded-full bg-white/80 border border-blue-200/80 text-[10px] sm:text-[11px] font-semibold text-slate-600">
                 Pansiyon & Yurt Portalı
               </div>
             </div>
 
-            <div className="w-full pt-8 z-10">
+            <div className="hidden sm:block w-full pt-6 z-10">
               <svg viewBox="0 0 360 170" className={`w-full h-auto ${darkMode ? 'stroke-blue-400/50' : 'stroke-[#2b6cb0]/60'}`} fill="none" strokeWidth="1.6">
                 <path d="M10 155 Q 180 145 350 155" strokeWidth="2" />
                 <rect x="75" y="55" width="210" height="96" fill={darkMode ? '#1e293b' : '#ffffff'} fillOpacity="0.6" />
@@ -295,56 +290,52 @@ export default function PansiyonLoginPortalPage() {
                 <rect x="252" y="70" width="16" height="20" />
                 <rect x="226" y="102" width="16" height="20" />
                 <rect x="252" y="102" width="16" height="20" />
-                <circle cx="48" cy="125" r="18" />
-                <line x1="48" y1="143" x2="48" y2="154" />
-                <circle cx="312" cy="128" r="15" />
-                <line x1="312" y1="143" x2="312" y2="154" />
               </svg>
             </div>
           </div>
 
-          {/* SAĞ SÜTUN */}
-          <div className="md:col-span-7 p-6 sm:p-9 flex flex-col justify-between space-y-6">
-            <div className="space-y-5">
+          {/* SAĞ SÜTUN: MOBİL DOKUNMATİK GİRİŞ FORMLARI */}
+          <div className="md:col-span-7 p-5 sm:p-9 flex flex-col justify-between space-y-5">
+            <div className="space-y-4 sm:space-y-5">
               <div className="text-center space-y-1">
-                <h2 className={`text-xl sm:text-2xl font-extrabold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                <h2 className={`text-lg sm:text-2xl font-extrabold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                   Pansiyon Yönetim Sistemi
                 </h2>
-                <p className="text-xs text-slate-400">Giriş yapmak için bilgilerinizi giriniz.</p>
+                <p className="text-xs text-slate-400">Giriş yapmak için rolünüzü seçip bilgilerinizi giriniz.</p>
               </div>
 
-              <div className={`grid grid-cols-3 p-1 rounded-xl border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100/90 border-slate-200/80'}`}>
+              <div className={`grid grid-cols-3 p-1.5 rounded-2xl border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100/90 border-slate-200/80'}`}>
                 <button
                   type="button"
                   onClick={() => { setActiveTab('veli'); setFeedback(null); }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'veli' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500 hover:text-slate-800'
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${
+                    activeTab === 'veli' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" /> Veli
+                  <Users className="w-4 h-4 shrink-0" /> <span>Veli</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setActiveTab('belletmen'); setFeedback(null); }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'belletmen' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500 hover:text-slate-800'
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${
+                    activeTab === 'belletmen' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'
                   }`}
                 >
-                  <UserCheck className="w-3.5 h-3.5" /> Belletmen
+                  <UserCheck className="w-4 h-4 shrink-0" /> <span>Belletmen</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setActiveTab('yonetici'); setFeedback(null); }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'yonetici' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500 hover:text-slate-800'
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${
+                    activeTab === 'yonetici' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'
                   }`}
                 >
-                  <Shield className="w-3.5 h-3.5" /> Yönetici
+                  <Shield className="w-4 h-4 shrink-0" /> <span>Yönetici</span>
                 </button>
               </div>
 
               {feedback && (
-                <div className={`p-3 rounded-xl text-xs font-semibold border ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                <div className={`p-3.5 rounded-xl text-xs font-semibold border ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
                   {feedback.text}
                 </div>
               )}
@@ -360,31 +351,41 @@ export default function PansiyonLoginPortalPage() {
                         <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                         <input
                           type="tel"
+                          inputMode="tel"
                           required
-                          placeholder="Kayıtlı Cep Telefonu No (Örn: 0555 444 55 66)"
+                          placeholder="Cep Telefonu No (0555 444 55 66)"
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          className={`w-full pl-10 pr-4 py-3 rounded-xl border text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                          className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
                         />
                       </div>
                       <div className={`p-3.5 rounded-xl border text-[11px] leading-relaxed flex items-start gap-2.5 ${darkMode ? 'bg-blue-950/40 border-blue-900 text-blue-300' : 'bg-[#f0f7ff] border-blue-100 text-[#1e40af]'}`}>
                         <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                         <span>Veliler kullanıcı adı olarak sisteme kayıtlı cep telefonu numaralarını kullanırlar. Güvenliğiniz için tek kullanımlık 6 haneli giriş şifresi WhatsApp üzerinden iletilir.</span>
                       </div>
-                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-xs shadow-md transition-all cursor-pointer">
+                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] active:scale-[0.99] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md transition-all cursor-pointer min-h-[48px]">
                         <MessageCircle className="w-4 h-4" /> {loading ? 'WhatsApp Mesajı Gönderiliyor...' : 'WhatsApp ile 6 Haneli Şifre Gönder'}
                       </button>
                     </form>
                   ) : (
                     <form onSubmit={handleVerifyVeliOtp} className="space-y-3.5">
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1 text-center">WhatsApp Numaranıza Gelen 6 Haneli Kodu Giriniz</label>
-                        <input type="text" maxLength={6} required placeholder="123456" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} className="w-full text-center tracking-widest text-lg font-extrabold py-3 border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 text-center">WhatsApp Numaranıza Gelen 6 Haneli Kodu Giriniz</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          required
+                          placeholder="123456"
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value)}
+                          className="w-full text-center tracking-widest text-xl font-extrabold py-3.5 border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[50px]"
+                        />
                       </div>
-                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-xs shadow-md cursor-pointer">
+                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md cursor-pointer min-h-[48px]">
                         <CheckCircle2 className="w-4 h-4" /> Doğrula ve Veli Portalına Gir
                       </button>
-                      <button type="button" onClick={() => setOtpStep('request')} className="w-full text-center text-[11px] text-slate-500 underline cursor-pointer">
+                      <button type="button" onClick={() => setOtpStep('request')} className="w-full text-center text-xs text-slate-500 underline py-2 cursor-pointer">
                         Telefon numarasını değiştir
                       </button>
                     </form>
@@ -398,7 +399,11 @@ export default function PansiyonLoginPortalPage() {
                   <p className="text-center text-[11px] text-slate-400">Erkek Belletmenler Erkek Pansiyonuna, Kadın Belletmenler Kız Pansiyonuna yönlendirilir</p>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">Nöbetçi Belletmen Öğretmen</label>
-                    <select value={selectedBelletmen} onChange={(e) => setSelectedBelletmen(e.target.value)} className={`w-full px-3.5 py-3 rounded-xl border text-xs font-bold ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                    <select
+                      value={selectedBelletmen}
+                      onChange={(e) => setSelectedBelletmen(e.target.value)}
+                      className={`w-full px-3.5 py-3.5 rounded-xl border text-base sm:text-xs font-bold min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                    >
                       {belletmenList.map((b) => (
                         <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name} ({b.cinsiyet === 'kadin' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})</option>
                       ))}
@@ -406,9 +411,15 @@ export default function PansiyonLoginPortalPage() {
                   </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input type="password" placeholder="Belletmen Şifresi (Demo: 1234)" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3 rounded-xl border text-xs ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                    <input
+                      type="password"
+                      placeholder="Belletmen Giriş Şifreniz"
+                      value={belletmenPass}
+                      onChange={(e) => setBelletmenPass(e.target.value)}
+                      className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                    />
                   </div>
-                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-xs shadow-md transition-all cursor-pointer">
+                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md transition-all cursor-pointer min-h-[48px]">
                     <UserCheck className="w-4 h-4" /> Belletmen Yoklama Paneline Giriş Yap
                   </button>
                 </form>
@@ -420,20 +431,31 @@ export default function PansiyonLoginPortalPage() {
                   <p className="text-center text-[11px] text-slate-400">Pansiyon İdaresi / Müdür Yardımcısı Yönetim Girişi</p>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input type="text" value={adminUser} onChange={(e) => setAdminUser(e.target.value)} placeholder="Yönetici Kullanıcı Adı" className={`w-full pl-10 pr-4 py-3 rounded-xl border text-xs ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                    <input
+                      type="text"
+                      value={adminUser}
+                      onChange={(e) => setAdminUser(e.target.value)}
+                      placeholder="Yönetici Kullanıcı Adı"
+                      className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                    />
                   </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input type="password" value={adminPass} onChange={(e) => setAdminPass(e.target.value)} placeholder="Yönetici Şifresi" className={`w-full pl-10 pr-4 py-3 rounded-xl border text-xs ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                    <input
+                      type="password"
+                      value={adminPass}
+                      onChange={(e) => setAdminPass(e.target.value)}
+                      placeholder="Yönetici Şifresi"
+                      className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
+                    />
                   </div>
-                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl text-xs shadow-md transition-all cursor-pointer">
+                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md transition-all cursor-pointer min-h-[48px]">
                     <Shield className="w-4 h-4" /> Yönetici Paneline Giriş Yap
                   </button>
                 </form>
               )}
             </div>
 
-            {/* ALT TELİF BİLGİSİ (HIZLI DEMO BUTONLARI KALDIRILDI) */}
             <div className="pt-4 mt-2 border-t border-slate-100">
               <p className="text-center text-[11px] text-slate-400">
                 © 2026 Prof. Dr. Mümtaz Turhan SBL
@@ -443,27 +465,26 @@ export default function PansiyonLoginPortalPage() {
         </div>
       </main>
 
-      {/* ALT BİLGİ ÇUBUĞU (FOOTER) */}
       <footer
-        className={`w-full border-t px-4 sm:px-10 py-3 text-[11px] text-slate-400 transition-colors ${
+        className={`w-full border-t px-4 sm:px-10 py-3 text-[11px] text-slate-400 text-center sm:text-left transition-colors ${
           darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/70'
         }`}
       >
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>© 2026 Pansiyon ve Yurt Takip Sistemi • Millî Eğitim Bakanlığı Standartlarına Uygun</span>
-          <span>SQLite Tabanlı Güvenli Veritabanı • Rol Tabanlı JWT Doğrulama</span>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-1.5">
+          <span>© 2026 Pansiyon ve Yurt Takip Sistemi • MEB Standartlarına Uygun</span>
+          <span className="hidden sm:inline">Güvenli Veritabanı • Rol Tabanlı Doğrulama</span>
         </div>
       </footer>
 
-      {/* SAĞ ALT YÜZEN "YURT AI ASİSTANI" BUTONU VE SOHBET PENCERESİ */}
-      <div className="fixed bottom-4 right-4 z-50">
+      {/* MOBİL UYUMLU YÜZEN YURT AI ASİSTANI */}
+      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-50">
         {aiOpen && (
-          <div className="mb-3 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
+          <div className="mb-3 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-extrabold">
                 <Sparkles className="w-4 h-4" /> Yurt AI Asistanı
               </div>
-              <button onClick={() => setAiOpen(false)} className="text-white/80 hover:text-white cursor-pointer">
+              <button onClick={() => setAiOpen(false)} className="text-white/80 hover:text-white p-1 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -487,13 +508,13 @@ export default function PansiyonLoginPortalPage() {
                 placeholder="Etüt saati, izin vb. sorun..."
                 value={aiQuestion}
                 onChange={(e) => setAiQuestion(e.target.value)}
-                className="flex-1 text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none"
+                className="flex-1 text-base sm:text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none text-slate-800"
               />
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-4 h-4" />
               </button>
             </form>
           </div>
@@ -501,7 +522,7 @@ export default function PansiyonLoginPortalPage() {
 
         <button
           onClick={() => setAiOpen(!aiOpen)}
-          className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs px-4 py-2.5 rounded-full shadow-lg shadow-indigo-500/30 transition-all cursor-pointer"
+          className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs px-4 py-3 rounded-full shadow-lg shadow-indigo-500/30 transition-all cursor-pointer"
         >
           <Sparkles className="w-4 h-4" /> Yurt AI Asistanı
           <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
