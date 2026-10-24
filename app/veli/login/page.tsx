@@ -10,16 +10,18 @@ export default function VeliLoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  const [debugHint, setDebugHint] = useState('');
+  const [fallbackHint, setFallbackHint] = useState('');
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone || phone.length < 10) {
-      setErrorMsg('Lütfen geçerli bir telefon numarası girin.');
+    if (!phone || phone.replace(/\D/g, '').length < 10) {
+      setErrorMsg('Lütfen geçerli bir telefon numarası girin (Örn: 0555 111 22 33).');
       return;
     }
     setLoading(true);
     setErrorMsg('');
+    setFallbackHint('');
+
     try {
       const res = await fetch('/api/auth/otp', {
         method: 'POST',
@@ -27,10 +29,34 @@ export default function VeliLoginPage() {
         body: JSON.stringify({ phone }),
       });
       const data = await res.json();
+
       if (data.success) {
+        let delivered = data.sentViaBot;
+
+        // Eğer sunucu doğrudan bota ulaşamadıysa (Vercel'deyse), bilgisayardaki yerel bota tarayıcıdan istek at
+        if (!delivered && data.otpCode) {
+          try {
+            const localBotRes = await fetch('http://localhost:3001/send-otp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone, code: data.otpCode }),
+            });
+            const localBotData = await localBotRes.json();
+            if (localBotData.success) {
+              delivered = true;
+            }
+          } catch {
+            // Yerel bot kapalıysa
+          }
+        }
+
         setStep('otp');
-        setSuccessMsg('Tek kullanımlık kod WhatsApp üzerinden gönderildi.');
-        if (data.debugCode) setDebugHint(data.debugCode);
+        if (delivered) {
+          setSuccessMsg('Tek kullanımlık şifreniz WhatsApp numaranıza başarıyla gönderildi!');
+        } else {
+          setSuccessMsg('Doğrulama kodu oluşturuldu (WhatsApp Botu kapalı olduğu için yedek mod aktif).');
+          setFallbackHint(data.otpCode);
+        }
       } else {
         setErrorMsg(data.message || 'Kod gönderilemedi.');
       }
@@ -78,17 +104,21 @@ export default function VeliLoginPage() {
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Veli Portalı WhatsApp Girişi</h1>
-          <p className="text-xs md:text-sm text-gray-500">Tek kullanımlık kod ile şifresiz giriş yapın.</p>
+          <p className="text-xs md:text-sm text-gray-500">WhatsApp üzerinden gelen tek kullanımlık kod ile şifresiz giriş yapın.</p>
         </div>
 
         {errorMsg && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-medium">{errorMsg}</div>}
         {successMsg && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-medium">{successMsg}</div>}
-        {debugHint && <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs text-center font-mono">💡 [Test Kodu]: <strong>{debugHint}</strong></div>}
+        {fallbackHint && (
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs text-center font-mono">
+            ⚠️ [Bot Kapalı - Yedek Kod]: <strong>{fallbackHint}</strong>
+          </div>
+        )}
 
         {step === 'phone' ? (
           <form onSubmit={handleRequestOtp} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Cep Telefonu Numaranız</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp Cep Telefonu Numaranız</label>
               <div className="relative">
                 <Phone className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -106,13 +136,13 @@ export default function VeliLoginPage() {
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold text-sm shadow-sm transition-all cursor-pointer"
             >
-              {loading ? 'Gönderiliyor...' : 'WhatsApp ile Kod Gönder'} <ArrowRight className="w-4 h-4" />
+              {loading ? 'WhatsApp Mesajı Gönderiliyor...' : 'WhatsApp ile Kod Gönder'} <ArrowRight className="w-4 h-4" />
             </button>
           </form>
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">6 Haneli Kod</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">WhatsApp'a Gelen 6 Haneli Kod</label>
               <input
                 type="text"
                 maxLength={6}
@@ -129,6 +159,13 @@ export default function VeliLoginPage() {
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold text-sm shadow-sm transition-all cursor-pointer"
             >
               {loading ? 'Doğrulanıyor...' : 'Giriş Yap'} <CheckCircle className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep('phone')}
+              className="w-full text-center text-xs text-gray-500 hover:text-gray-800 underline pt-2"
+            >
+              Numarayı değiştir / Kodu tekrar gönder
             </button>
           </form>
         )}

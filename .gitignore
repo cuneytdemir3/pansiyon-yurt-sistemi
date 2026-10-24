@@ -1,2 +1,6 @@
 node_modules/ 
 .next/ 
+
+# WhatsApp Bot Oturum Dosyalari
+.wwebjs_auth/
+.wwebjs_cache/
