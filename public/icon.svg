@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.3" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <g filter="url(#shadow)">
+    <text x="50%" y="45%" font-family="Arial, sans-serif" font-size="180" font-weight="900" fill="#ffffff" text-anchor="middle" dominant-baseline="middle" letter-spacing="-4">SBL</text>
+    <text x="50%" y="72%" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#93c5fd" text-anchor="middle" dominant-baseline="middle" letter-spacing="6">PANSİYON</text>
+  </g>
+</svg>
