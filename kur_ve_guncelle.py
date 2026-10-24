@@ -14,7 +14,7 @@ def write_file(filepath, content):
     print(f"[DOSYA GÜNCELLENDİ] {filepath}")
 
 def kill_old_processes():
-    print("🧹 Eski açık işlemler temizleniyor...")
+    print("🧹 Açık kalan eski Node.js ve Tünel işlemleri temizleniyor...")
     subprocess.run("taskkill /F /IM node.exe", shell=True, capture_output=True)
     subprocess.run("taskkill /F /IM cloudflared.exe", shell=True, capture_output=True)
     time.sleep(1)
@@ -64,9 +64,1420 @@ def run_command(command, description):
         print(f"[BAŞARILI] {description} tamamlandı.")
         return True
 
+# -------------------------------------------------------------------------
+# 1. MERKEZİ PANSİYON API ROTASI (Öğrenci, İzin, Yoklama, Nöbet Defteri)
+# -------------------------------------------------------------------------
+PANSIYON_API_TS = r'''import { NextResponse } from 'next/server';
+
+export interface StudentRecord {
+  id: string;
+  name: string;
+  tc: string;
+  sinif: string;
+  kat: number;
+  oda: string;
+  yatak: string;
+  anneTel: string;
+  babaTel: string;
+  status: 'var' | 'yok' | 'izinli';
+}
+
+export interface LeaveRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  oda: string;
+  tip: string;
+  baslangic: string;
+  bitis: string;
+  aciklama: string;
+  veliTel: string;
+  createdAt: string;
+}
+
+export interface DutyLogRecord {
+  id: string;
+  tarih: string;
+  seans: string;
+  belletmenAd: string;
+  notlar: string;
+  toplam: number;
+  varSayisi: number;
+  yokSayisi: number;
+  izinliSayisi: number;
+}
+
+declare global {
+  var __pansiyonStore: {
+    students: StudentRecord[];
+    leaves: LeaveRecord[];
+    dutyLogs: DutyLogRecord[];
+    nobetciler: { gun: string; belletmen: string; kat: string }[];
+  } | undefined;
+}
+
+if (!globalThis.__pansiyonStore) {
+  globalThis.__pansiyonStore = {
+    students: [
+      { id: '1', name: 'Ahmet Yılmaz', tc: '12345678901', sinif: '10-A', kat: 1, oda: '101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '2', name: 'Mehmet Demir', tc: '12345678902', sinif: '11-B', kat: 1, oda: '101', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '3', name: 'Canberk Öztürk', tc: '12345678905', sinif: '9-A', kat: 1, oda: '102', yatak: 'A', anneTel: '05416571469', babaTel: '05556667788', status: 'yok' },
+      { id: '4', name: 'Burak Kaya', tc: '12345678908', sinif: '10-C', kat: 2, oda: '201', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
+      { id: '5', name: 'Emre Çelik', tc: '12345678909', sinif: '12-A', kat: 3, oda: '301', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
+    ],
+    leaves: [
+      { id: '101', studentId: '1', studentName: 'Ahmet Yılmaz', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-21', bitis: '2026-10-30', aciklama: 'Akraba ziyareti', veliTel: '05416571469', createdAt: '2026-10-21' },
+      { id: '102', studentId: '2', studentName: 'Mehmet Demir', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-20', bitis: '2026-10-25', aciklama: 'Aile ziyareti ve hafta sonu ev izni', veliTel: '05416571469', createdAt: '2026-10-20' },
+    ],
+    dutyLogs: [
+      { id: '1', tarih: '2026-10-24', seans: 'Etüt (19:15)', belletmenAd: 'Cüneyt DEMİR', notlar: 'Etüt yoklaması zamanında alındı. Oda 102 Canberk Öztürk yoklamada bulunmadı, velisine bilgi verildi.', toplam: 5, varSayisi: 2, yokSayisi: 1, izinliSayisi: 2 }
+    ],
+    nobetciler: [
+      { gun: 'Pazartesi', belletmen: 'Cüneyt DEMİR', kat: 'Tüm Katlar' },
+      { gun: 'Salı', belletmen: 'Ali KAYA', kat: '1. ve 2. Kat' },
+      { gun: 'Çarşamba', belletmen: 'Mehmet YILMAZ', kat: '3. Kat' },
+      { gun: 'Perşembe', belletmen: 'Cüneyt DEMİR', kat: 'Tüm Katlar' },
+      { gun: 'Cuma', belletmen: 'Hasan DEMİR', kat: 'Hafta Sonu Nöbeti' },
+    ]
+  };
+}
+
+export async function GET() {
+  return NextResponse.json({
+    success: true,
+    store: globalThis.__pansiyonStore
+  });
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { action } = body;
+    const store = globalThis.__pansiyonStore!;
+
+    if (action === 'add_leave') {
+      const { studentId, tip, baslangic, bitis, aciklama, veliTel } = body;
+      const st = store.students.find((s) => s.id === studentId) || store.students[0];
+      const newLeave: LeaveRecord = {
+        id: Date.now().toString(),
+        studentId: st.id,
+        studentName: st.name,
+        oda: st.oda,
+        tip: tip || 'Evci İzni',
+        baslangic,
+        bitis,
+        aciklama: aciklama || 'Veli talebi',
+        veliTel: veliTel || st.anneTel,
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+      store.leaves.unshift(newLeave);
+      st.status = 'izinli';
+      return NextResponse.json({ success: true, message: 'İzin talebi onaylandı ve belletmen ekranına otomatik işlendi.', store });
+    }
+
+    if (action === 'update_attendance') {
+      const { students } = body;
+      if (Array.isArray(students)) {
+        store.students = students;
+      }
+      return NextResponse.json({ success: true, message: 'Yoklama kayıtları güncellendi.', store });
+    }
+
+    if (action === 'add_student') {
+      const { name, tc, sinif, kat, oda, yatak, anneTel, babaTel } = body;
+      const newStudent: StudentRecord = {
+        id: Date.now().toString(),
+        name,
+        tc: tc || '10000000000',
+        sinif: sinif || '9-A',
+        kat: Number(kat) || 1,
+        oda: oda || '101',
+        yatak: yatak || 'A',
+        anneTel: anneTel || '05416571469',
+        babaTel: babaTel || '05416571469',
+        status: 'var',
+      };
+      store.students.push(newStudent);
+      return NextResponse.json({ success: true, message: `${name} pansiyon listesine eklendi.`, store });
+    }
+
+    if (action === 'bulk_import') {
+      const { rows } = body;
+      let added = 0;
+      if (Array.isArray(rows)) {
+        for (const r of rows) {
+          if (!r.name) continue;
+          store.students.push({
+            id: (Date.now() + Math.random()).toString(),
+            name: r.name.trim(),
+            tc: (r.tc || '10000000000').trim(),
+            sinif: (r.sinif || '9-A').trim(),
+            kat: Number(r.kat) || 1,
+            oda: (r.oda || '101').trim(),
+            yatak: (r.yatak || 'A').trim(),
+            anneTel: (r.anneTel || '05416571469').trim(),
+            babaTel: (r.babaTel || '05416571469').trim(),
+            status: 'var',
+          });
+          added++;
+        }
+      }
+      return NextResponse.json({ success: true, message: `${added} öğrenci başarıyla toplu olarak yüklendi.`, store });
+    }
+
+    if (action === 'delete_student') {
+      store.students = store.students.filter((s) => s.id !== body.id);
+      return NextResponse.json({ success: true, message: 'Öğrenci kaydı silindi.', store });
+    }
+
+    if (action === 'add_duty_log') {
+      const { tarih, seans, belletmenAd, notlar } = body;
+      const newLog: DutyLogRecord = {
+        id: Date.now().toString(),
+        tarih,
+        seans,
+        belletmenAd: belletmenAd || 'Nöbetçi Belletmen',
+        notlar,
+        toplam: store.students.length,
+        varSayisi: store.students.filter((s) => s.status === 'var').length,
+        yokSayisi: store.students.filter((s) => s.status === 'yok').length,
+        izinliSayisi: store.students.filter((s) => s.status === 'izinli').length,
+      };
+      store.dutyLogs.unshift(newLog);
+      return NextResponse.json({ success: true, message: 'Resmî nöbet defteri kaydı oluşturuldu.', store });
+    }
+
+    return NextResponse.json({ success: false, message: 'Geçersiz işlem.' }, { status: 400 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  }
+}
+'''
+
+# -------------------------------------------------------------------------
+# 2. VELİ PORTALI SAYFASI (/veli - Evci/Çarşı İzin Talebi + Yoklama Takibi)
+# -------------------------------------------------------------------------
+VELI_PAGE_TSX = r''''use client';
+
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Calendar, Clock, CheckCircle2, Send, Home, FileText, LogOut, UserCheck } from 'lucide-react';
+
+export default function VeliPortalPage() {
+  const [students, setStudents] = useState<any[]>([]);
+  const [leaves, setLeaves] = useState<any[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('1');
+  const [tip, setTip] = useState('Ev İzni (Hafta Sonu)');
+  const [baslangic, setBaslangic] = useState('2026-10-24');
+  const [bitis, setBitis] = useState('2026-10-26');
+  const [aciklama, setAciklama] = useState('');
+  const [veliTel, setVeliTel] = useState('05416571469');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const fetchStore = async () => {
+    try {
+      const res = await fetch('/api/pansiyon');
+      const data = await res.json();
+      if (data.success && data.store) {
+        setStudents(data.store.students);
+        setLeaves(data.store.leaves);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchStore();
+  }, []);
+
+  const currentStudent = students.find((s) => s.id === selectedStudentId) || students[0];
+  const studentLeaves = leaves.filter((l) => l.studentId === (currentStudent?.id || '1'));
+
+  const handleCreateLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMsg('');
+    try {
+      const res = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add_leave',
+          studentId: currentStudent?.id || '1',
+          tip,
+          baslangic,
+          bitis,
+          aciklama,
+          veliTel,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStudents(data.store.students);
+        setLeaves(data.store.leaves);
+        setAciklama('');
+        setMsg('✅ İzin talebiniz onaylandı! Nöbetçi belletmen ekranına Otomatik İzinli olarak yansıtıldı.');
+
+        // WhatsApp üzerinden Veliye de bilgilendirme mesajı gönder
+        await fetch('/api/belletmen/bildirim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: veliTel,
+            ogrenciAd: currentStudent?.name || 'Öğrenci',
+            odaNo: currentStudent?.oda || '101',
+            tarih: `${baslangic} / ${bitis}`,
+            seans: 'izin_onay',
+            veliTipi: `${tip} Onayı: ${aciklama || 'Veli İzin Talebi'}`
+          }),
+        });
+      }
+    } catch {
+      setMsg('İzin kaydedilirken hata oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+
+        {/* Üst Başlık */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+                Prof. Dr. Mümtaz Turhan SBL Pansiyonu
+              </span>
+              <h1 className="text-lg md:text-xl font-extrabold text-slate-900 mt-0.5">Veli İzin & Öğrenci Takip Portalı</h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <a href="/belletmen" className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-xl hover:bg-blue-100">
+              Belletmen Ekranı
+            </a>
+            <a href="/veli/login" className="flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl hover:bg-slate-200">
+              <LogOut className="w-3.5 h-3.5" /> Çıkış
+            </a>
+          </div>
+        </div>
+
+        {/* Öğrenci Seçimi ve Durum Kartı */}
+        {currentStudent && (
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">Öğrenci Seçimi (Test İçin Tüm Öğrenciler)</label>
+                <select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="mt-1 text-sm font-bold text-slate-800 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — Oda: {s.oda} ({s.sinif})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Anlık Pansiyon Durumu:</span>
+                <span
+                  className={`text-xs font-extrabold px-3 py-1 rounded-full ${
+                    currentStudent.status === 'izinli'
+                      ? 'bg-amber-100 text-amber-800'
+                      : currentStudent.status === 'yok'
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  {currentStudent.status === 'izinli'
+                    ? 'İzinli (Evci/Çarşı)'
+                    : currentStudent.status === 'yok'
+                    ? 'Yoklamada Bulunamadı'
+                    : 'Pansiyonda (Mevcut)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl">
+                <span className="text-slate-400 block">Oda / Yatak</span>
+                <strong className="text-slate-800 text-sm">Oda {currentStudent.oda} - Yatak {currentStudent.yatak}</strong>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl">
+                <span className="text-slate-400 block">Bulunduğu Kat</span>
+                <strong className="text-slate-800 text-sm">{currentStudent.kat}. Kat</strong>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl">
+                <span className="text-slate-400 block">Sınıfı</span>
+                <strong className="text-slate-800 text-sm">{currentStudent.sinif}</strong>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl">
+                <span className="text-slate-400 block">T.C. Kimlik</span>
+                <strong className="text-slate-800 text-sm">{currentStudent.tc}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {msg && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-2xl text-xs font-bold shadow-xs">
+            {msg}
+          </div>
+        )}
+
+        {/* Yeni Evci / Çarşı İzin Talep Formu */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-emerald-600" /> Yeni Evci / Çarşı İzin Talebi Oluştur
+          </h2>
+          <p className="text-xs text-slate-500">
+            Oluşturduğunuz izinler anında nöbetçi belletmen yoklama ekranına <strong>Otomatik İzinli</strong> olarak düşer.
+          </p>
+
+          <form onSubmit={handleCreateLeave} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">İzin Türü</label>
+              <select
+                value={tip}
+                onChange={(e) => setTip(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold bg-white"
+              >
+                <option value="Ev İzni">Hafta Sonu Evci İzni</option>
+                <option value="Çarşı İzni">Günlük Çarşı / Kurs İzni</option>
+                <option value="Sağlık / Rapor İzni">Sağlık / Hastane İzni</option>
+                <option value="Özel Aile İzni">Özel Aile Ziyareti İzni</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Bilgilendirilecek WhatsApp No</label>
+              <input
+                type="text"
+                value={veliTel}
+                onChange={(e) => setVeliTel(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Başlangıç Tarihi</label>
+              <input
+                type="date"
+                required
+                value={baslangic}
+                onChange={(e) => setBaslangic(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Dönüş (Bitiş) Tarihi</label>
+              <input
+                type="date"
+                required
+                value={bitis}
+                onChange={(e) => setBitis(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">İzin Açıklaması / Gidilecek Adres Özeti</label>
+              <input
+                type="text"
+                required
+                placeholder="Örn: Hafta sonu aile ziyareti / Ev izni"
+                value={aciklama}
+                onChange={(e) => setAciklama(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                {loading ? 'İzin Kaydediliyor ve WhatsApp Onayı Gönderiliyor...' : 'İzin Talebini Onayla ve Gönder'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Geçmiş İzinler */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-blue-600" /> Öğrencinin Aktif ve Geçmiş İzin Kayıtları
+          </h3>
+          {studentLeaves.length === 0 ? (
+            <p className="text-xs text-slate-400">Henüz kayıtlı izin bulunmuyor.</p>
+          ) : (
+            <div className="space-y-2">
+              {studentLeaves.map((l) => (
+                <div key={l.id} className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex flex-col sm:flex-row justify-between gap-2 text-xs">
+                  <div>
+                    <strong className="text-amber-900">{l.tip}:</strong>{' '}
+                    <span className="text-amber-800">{l.baslangic} — {l.bitis} ({l.aciklama})</span>
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-md self-start">
+                    Onaylandı (Otomatik İzinli)
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+'''
+
+# -------------------------------------------------------------------------
+# 3. BELLETMEN EKRANI + RESMÎ MEB NÖBET DEFTERİ PDF ÇIKTISI (/belletmen)
+# -------------------------------------------------------------------------
+BELLETMEN_PAGE_TSX = r''''use client';
+
+import React, { useState, useEffect } from 'react';
+import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X } from 'lucide-react';
+
+interface Student {
+  id: string;
+  name: string;
+  kat: number;
+  oda: string;
+  yatak: string;
+  tc: string;
+  sinif?: string;
+  status: 'var' | 'yok' | 'izinli';
+  izinAciklama?: string;
+  anneTel: string;
+  babaTel: string;
+}
+
+export default function BelletmenPage() {
+  const [students, setStudents] = useState<Student[]>([]);
+  const [leaves, setLeaves] = useState<any[]>([]);
+  const [selectedKat, setSelectedKat] = useState<number>(1);
+  const [tarih, setTarih] = useState<string>('2026-10-24');
+  const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
+  const [sendingKey, setSendingKey] = useState<string | null>(null);
+  const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Resmî Nöbet Defteri Modal & PDF Durumu
+  const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
+  const [belletmenAd, setBelletmenAd] = useState('Cüneyt DEMİR');
+  const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
+
+  const loadData = async () => {
+    try {
+      const res = await fetch('/api/pansiyon');
+      const data = await res.json();
+      if (data.success && data.store) {
+        setStudents(data.store.students);
+        setLeaves(data.store.leaves);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Seçili tarihte öğrencinin veli izni var mı kontrol et
+  const getActiveLeaveText = (studentId: string) => {
+    const found = leaves.find(
+      (l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih
+    );
+    if (found) {
+      return `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})`;
+    }
+    return undefined;
+  };
+
+  const enrichedStudents = students.map((s) => {
+    const leaveTxt = getActiveLeaveText(s.id);
+    if (leaveTxt) {
+      return { ...s, status: 'izinli' as const, izinAciklama: leaveTxt };
+    }
+    return s;
+  });
+
+  const katStudents = enrichedStudents.filter((s) => s.kat === selectedKat);
+  const katMevcudu = katStudents.length;
+  const varSayisi = katStudents.filter((s) => s.status === 'var').length;
+  const yokSayisi = katStudents.filter((s) => s.status === 'yok').length;
+  const izinliSayisi = katStudents.filter((s) => s.status === 'izinli').length;
+
+  const odalar = Array.from(new Set(katStudents.map((s) => s.oda))).sort();
+
+  const syncAttendance = async (updated: Student[]) => {
+    setStudents(updated);
+    try {
+      await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_attendance', students: updated }),
+      });
+    } catch {}
+  };
+
+  const handleStatusChange = (id: string, newStatus: 'var' | 'yok') => {
+    const updated = students.map((s) => (s.id === id ? { ...s, status: newStatus } : s));
+    syncAttendance(updated);
+  };
+
+  const handlePhoneChange = (id: string, field: 'anneTel' | 'babaTel', value: string) => {
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+  };
+
+  const handleTumunuVarYap = () => {
+    const updated = students.map((s) => {
+      const hasLeave = getActiveLeaveText(s.id);
+      if (s.kat === selectedKat && !hasLeave && s.status !== 'izinli') {
+        return { ...s, status: 'var' as const };
+      }
+      return s;
+    });
+    syncAttendance(updated);
+    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' olarak işaretlendi.` });
+  };
+
+  const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
+    const btnKey = `${student.id}-${veliTipi}`;
+    setSendingKey(btnKey);
+    setFeedback(null);
+
+    try {
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          ogrenciAd: student.name,
+          odaNo: student.oda,
+          tarih,
+          seans,
+          veliTipi
+        })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
+        setFeedback({ type: 'success', text: data.message });
+      } else {
+        setFeedback({
+          type: 'error',
+          text: data.message || 'WhatsApp mesajı iletilemedi. Botun açık olduğundan emin olun.'
+        });
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Sunucuya bağlanırken hata oluştu.' });
+    } finally {
+      setSendingKey(null);
+    }
+  };
+
+  const handleSaveAndPrintDutyLog = async () => {
+    await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add_duty_log',
+        tarih,
+        seans: seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)',
+        belletmenAd,
+        notlar: nobetNotu,
+      }),
+    });
+    window.print();
+  };
+
+  const tumYoklar = enrichedStudents.filter((s) => s.status === 'yok');
+  const tumIzinliler = enrichedStudents.filter((s) => s.status === 'izinli');
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
+      <div className="max-w-5xl mx-auto space-y-5 print:hidden">
+
+        {/* Üst Bilgi ve Navigasyon */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <h1 className="text-lg md:text-xl font-bold text-slate-800">Nöbetçi Belletmen Yoklama & İzin Ekranı</h1>
+              <p className="text-xs text-slate-500">
+                Etüt (19:15) ve Yat Yoklaması (23:00) • Veli izin tarihleri arasında öğrenciler otomatik İzinli sayılır
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                Veli İzin Portalı
+              </a>
+              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
+                Yönetici (Admin) Paneli
+              </a>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <Calendar className="w-4 h-4 text-blue-600" />
+                <span className="text-xs font-medium text-slate-600">Yoklama Tarihi:</span>
+                <input
+                  type="date"
+                  value={tarih}
+                  onChange={(e) => setTarih(e.target.value)}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                />
+              </div>
+
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setSeans('etut')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    seans === 'etut' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Etüt (19:15)
+                </button>
+                <button
+                  onClick={() => setSeans('yat')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    seans === 'yat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Yat (23:00)
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setNobetDefteriAcik(true)}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              <FileText className="w-4 h-4" /> Resmî Nöbet Defteri & PDF Çıktı
+            </button>
+          </div>
+        </div>
+
+        {/* Bildirim Durum Mesajı */}
+        {feedback && (
+          <div
+            className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-sm ${
+              feedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                : 'bg-rose-50 border-rose-300 text-rose-800'
+            }`}
+          >
+            <span>{feedback.text}</span>
+            <button onClick={() => setFeedback(null)} className="text-xs underline ml-4">Kapat</button>
+          </div>
+        )}
+
+        {/* Kat Seçimi ve Tümünü Var Yap */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {[1, 2, 3].map((kat) => (
+              <button
+                key={kat}
+                onClick={() => setSelectedKat(kat)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedKat === kat
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {kat}. Kat
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleTumunuVarYap}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+          >
+            <CheckCircle2 className="w-4 h-4" /> Tümünü Var Yap
+          </button>
+        </div>
+
+        {/* Özet Kartları */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="text-xs text-slate-500">Kat Mevcudu</div>
+            <div className="text-xl font-extrabold text-slate-900 mt-1">{katMevcudu}</div>
+          </div>
+          <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 shadow-sm">
+            <div className="text-xs text-emerald-700 font-medium">Var</div>
+            <div className="text-xl font-extrabold text-emerald-700 mt-1">{varSayisi}</div>
+          </div>
+          <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-200 shadow-sm">
+            <div className="text-xs text-rose-700 font-medium">Yok</div>
+            <div className="text-xl font-extrabold text-rose-700 mt-1">{yokSayisi}</div>
+          </div>
+          <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200 shadow-sm">
+            <div className="text-xs text-amber-700 font-medium">Veli İzinli (Otomatik)</div>
+            <div className="text-xl font-extrabold text-amber-700 mt-1">{izinliSayisi}</div>
+          </div>
+        </div>
+
+        {/* Odalar ve Öğrenci Kartları */}
+        <div className="space-y-5">
+          {odalar.map((odaNo) => {
+            const odaOgrencileri = katStudents.filter((s) => s.oda === odaNo);
+            return (
+              <div key={odaNo} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-900 text-white px-5 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold">
+                    <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo}
+                  </div>
+                  <span className="text-[11px] bg-slate-800 px-2.5 py-0.5 rounded-full text-slate-300">
+                    {odaOgrencileri.length} Öğrenci
+                  </span>
+                </div>
+
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {odaOgrencileri.map((student) => {
+                    const anneKey = `${student.id}-Anne`;
+                    const babaKey = `${student.id}-Baba`;
+
+                    return (
+                      <div
+                        key={student.id}
+                        className="border border-slate-200 rounded-xl p-4 space-y-3 bg-white shadow-xs"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-sm">{student.name}</h3>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Oda: {student.oda} | Yatak: {student.yatak} | T.C.: {student.tc}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
+                              student.status === 'izinli'
+                                ? 'bg-amber-100 text-amber-800'
+                                : student.status === 'yok'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}
+                          >
+                            {student.status === 'izinli' ? 'İzinli' : student.status === 'yok' ? 'Yok' : 'Var'}
+                          </span>
+                        </div>
+
+                        {student.status === 'izinli' ? (
+                          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 font-medium">
+                            <strong>Otomatik İzinli:</strong> {student.izinAciklama || 'Veli İzni Aktif'}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                onClick={() => handleStatusChange(student.id, 'var')}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  student.status === 'var'
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                              >
+                                Var
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(student.id, 'yok')}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  student.status === 'yok'
+                                    ? 'bg-red-600 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                              >
+                                Yok
+                              </button>
+                            </div>
+
+                            {student.status === 'yok' && (
+                              <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2.5 mt-2">
+                                <div className="text-[11px] font-bold text-rose-800">
+                                  WhatsApp Yoklama Bildirimi Gönder:
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                  <div className="flex items-center bg-white border border-rose-200 rounded-lg px-2 py-1">
+                                    <Phone className="w-3 h-3 text-slate-400 mr-1" />
+                                    <span className="text-slate-500 mr-1">Anne:</span>
+                                    <input
+                                      type="text"
+                                      value={student.anneTel}
+                                      onChange={(e) => handlePhoneChange(student.id, 'anneTel', e.target.value)}
+                                      className="w-full font-mono text-slate-800 focus:outline-none"
+                                    />
+                                  </div>
+                                  <div className="flex items-center bg-white border border-rose-200 rounded-lg px-2 py-1">
+                                    <Phone className="w-3 h-3 text-slate-400 mr-1" />
+                                    <span className="text-slate-500 mr-1">Baba:</span>
+                                    <input
+                                      type="text"
+                                      value={student.babaTel}
+                                      onChange={(e) => handlePhoneChange(student.id, 'babaTel', e.target.value)}
+                                      className="w-full font-mono text-slate-800 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={sendingKey === anneKey}
+                                    onClick={() => handleSendWhatsApp(student, 'Anne', student.anneTel)}
+                                    className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white py-2 px-3 rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                                  >
+                                    {sendingKey === anneKey ? (
+                                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gönderiliyor...</>
+                                    ) : sentKeys[anneKey] ? (
+                                      <><Check className="w-3.5 h-3.5" /> Anneye Gönderildi</>
+                                    ) : (
+                                      <><Send className="w-3.5 h-3.5" /> Anneye Mesaj At ({student.anneTel})</>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={sendingKey === babaKey}
+                                    onClick={() => handleSendWhatsApp(student, 'Baba', student.babaTel)}
+                                    className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white py-2 px-3 rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-xs"
+                                  >
+                                    {sendingKey === babaKey ? (
+                                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gönderiliyor...</>
+                                    ) : sentKeys[babaKey] ? (
+                                      <><Check className="w-3.5 h-3.5" /> Babaya Gönderildi</>
+                                    ) : (
+                                      <><Send className="w-3.5 h-3.5" /> Babaya Mesaj At ({student.babaTel})</>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* RESMÎ MEB NÖBET DEFTERİ MODAL VE YAZDIRMA EKRANI */}
+      {nobetDefteriAcik && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto print:static print:bg-white print:p-0">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 shadow-2xl print:shadow-none print:rounded-none">
+            
+            {/* Modal Üst Çubuk (Yazdırırken gizlenir) */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
+              <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-600" /> Resmî MEB Pansiyon Nöbet Defteri ve PDF Raporu
+              </h2>
+              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Düzenlenebilir Alanlar (Yazdırırken gizlenir) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nöbetçi Belletmen Öğretmen</label>
+                <input
+                  type="text"
+                  value={belletmenAd}
+                  onChange={(e) => setBelletmenAd(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Yoklama Tarihi / Seans</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={`${tarih} — ${seans === 'etut' ? '19:15 Etüt Yoklaması' : '23:00 Yat Yoklaması'}`}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nöbet Vukuat / Revir / Olay Notları</label>
+                <textarea
+                  rows={3}
+                  value={nobetNotu}
+                  onChange={(e) => setNobetNotu(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-xs bg-white"
+                />
+              </div>
+            </div>
+
+            {/* RESMÎ A4 TUTANAK ŞABLONU */}
+            <div className="border border-slate-300 p-6 rounded-xl space-y-5 text-slate-900 print:border-none print:p-0">
+              <div className="text-center space-y-1 border-b-2 border-slate-800 pb-4">
+                <p className="text-xs font-bold uppercase">T.C.</p>
+                <p className="text-xs font-bold uppercase">MİLLÎ EĞİTİM BAKANLIĞI</p>
+                <p className="text-sm font-extrabold uppercase">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Müdürlüğü</p>
+                <p className="text-xs font-semibold uppercase text-slate-700">Öğrenci Pansiyonu Günlük Nöbet ve Yoklama Tutanağı</p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs border border-slate-300 p-3 rounded-lg">
+                <div><strong>Tarih:</strong> {tarih}</div>
+                <div><strong>Seans:</strong> {seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'}</div>
+                <div><strong>Toplam Kayıtlı:</strong> {enrichedStudents.length}</div>
+                <div><strong>Mevcut (Var):</strong> {enrichedStudents.filter(s => s.status === 'var').length}</div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-rose-600">
+                  1. Yoklamada Bulunmayan (Yok / Habersiz) Öğrenciler ({tumYoklar.length})
+                </h4>
+                {tumYoklar.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic pl-2">Yoklamada habersiz eksik öğrenci bulunmamaktadır.</p>
+                ) : (
+                  <table className="w-full text-xs border-collapse border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 p-1.5 text-left">Ad Soyad</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Oda / Yatak</th>
+                        <th className="border border-slate-300 p-1.5 text-left">T.C. Kimlik</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Veli İletişim</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tumYoklar.map((s) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-300 p-1.5 font-bold">{s.name}</td>
+                          <td className="border border-slate-300 p-1.5">Oda {s.oda} ({s.yatak})</td>
+                          <td className="border border-slate-300 p-1.5">{s.tc}</td>
+                          <td className="border border-slate-300 p-1.5">{s.anneTel}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-amber-500">
+                  2. İzinli (Evci / Çarşı / Raporlu) Öğrenciler ({tumIzinliler.length})
+                </h4>
+                {tumIzinliler.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic pl-2">İzinli öğrenci bulunmamaktadır.</p>
+                ) : (
+                  <table className="w-full text-xs border-collapse border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 p-1.5 text-left">Ad Soyad</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Oda</th>
+                        <th className="border border-slate-300 p-1.5 text-left">İzin Detayı</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tumIzinliler.map((s) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-300 p-1.5 font-bold">{s.name}</td>
+                          <td className="border border-slate-300 p-1.5">Oda {s.oda}</td>
+                          <td className="border border-slate-300 p-1.5">{s.izinAciklama || 'Veli İzni'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-indigo-600">
+                  3. Nöbetçi Belletmen Günlük Vukuat ve Değerlendirme Notu
+                </h4>
+                <div className="p-3 border border-slate-300 rounded-lg text-xs min-h-[70px] whitespace-pre-wrap">
+                  {nobetNotu}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs">
+                <div>
+                  <p className="font-bold">Nöbetçi Belletmen Öğretmen</p>
+                  <p className="mt-1 text-slate-700">{belletmenAd}</p>
+                  <p className="mt-6 text-slate-400">İmza</p>
+                </div>
+                <div>
+                  <p className="font-bold">Pansiyondan Sorumlu Müdür Yardımcısı</p>
+                  <p className="mt-1 text-slate-700">İdare Onayı</p>
+                  <p className="mt-6 text-slate-400">İmza / Mühür</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 print:hidden">
+              <button
+                onClick={() => setNobetDefteriAcik(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Kapat
+              </button>
+              <button
+                onClick={handleSaveAndPrintDutyLog}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-md cursor-pointer"
+              >
+                <Printer className="w-4 h-4" /> Kaydet ve Resmî PDF / Yazıcı Çıktısı Al
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+'''
+
+# -------------------------------------------------------------------------
+# 4. YÖNETİCİ / ADMİN PANELİ (/admin - e-Okul Excel Yükleme & Oda Matrisi)
+# -------------------------------------------------------------------------
+ADMIN_PAGE_TSX = r''''use client';
+
+import React, { useState, useEffect } from 'react';
+import { Users, Upload, Plus, Trash2, Home, Shield, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
+
+export default function AdminDashboardPage() {
+  const [students, setStudents] = useState<any[]>([]);
+  const [nobetciler, setNobetciler] = useState<any[]>([]);
+  const [dutyLogs, setDutyLogs] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+
+  // Yeni Öğrenci Form State
+  const [name, setName] = useState('');
+  const [tc, setTc] = useState('');
+  const [sinif, setSinif] = useState('9-A');
+  const [kat, setKat] = useState(1);
+  const [oda, setOda] = useState('101');
+  const [yatak, setYatak] = useState('A');
+  const [anneTel, setAnneTel] = useState('05416571469');
+  const [babaTel, setBabaTel] = useState('05416571469');
+
+  // Toplu CSV / Excel Yükleme State
+  const [csvText, setCsvText] = useState(
+    'Ali Veli, 12345678910, 9-B, 1, 103, A, 05416571469, 05416571469\nAyşe Fatma, 12345678911, 10-A, 2, 202, B, 05416571469, 05416571469'
+  );
+
+  const fetchAll = async () => {
+    try {
+      const res = await fetch('/api/pansiyon');
+      const data = await res.json();
+      if (data.success && data.store) {
+        setStudents(data.store.students);
+        setNobetciler(data.store.nobetciler || []);
+        setDutyLogs(data.store.dutyLogs || []);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name) return;
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add_student',
+        name,
+        tc,
+        sinif,
+        kat,
+        oda,
+        yatak,
+        anneTel,
+        babaTel,
+      }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setStudents(data.store.students);
+      setName('');
+      setTc('');
+      setMsg(data.message);
+    }
+  };
+
+  const handleBulkImport = async () => {
+    const lines = csvText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const rows = lines.map((line) => {
+      const parts = line.split(',').map((p) => p.trim());
+      return {
+        name: parts[0],
+        tc: parts[1] || '10000000000',
+        sinif: parts[2] || '9-A',
+        kat: Number(parts[3]) || 1,
+        oda: parts[4] || '101',
+        yatak: parts[5] || 'A',
+        anneTel: parts[6] || '05416571469',
+        babaTel: parts[7] || '05416571469',
+      };
+    });
+
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bulk_import', rows }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setStudents(data.store.students);
+      setMsg(data.message);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_student', id }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setStudents(data.store.students);
+      setMsg('Öğrenci silindi.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+
+        {/* Üst Başlık */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-lg md:text-xl font-extrabold text-slate-900">Pansiyon İdare & Yönetici Paneli</h1>
+              <p className="text-xs text-slate-500">e-Okul Excel öğrenci yükleme, oda/yatak yerleştirme ve nöbet defteri arşivi</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <a href="/belletmen" className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-2 rounded-xl border border-blue-200">
+              Belletmen Yoklama Ekranı
+            </a>
+            <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200">
+              Veli İzin Portalı
+            </a>
+          </div>
+        </div>
+
+        {msg && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-2xl text-xs font-bold flex justify-between">
+            <span>✅ {msg}</span>
+            <button onClick={() => setMsg('')} className="underline">Kapat</button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Tekli Öğrenci Ekleme */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-indigo-600" /> Yeni Öğrenci & Oda Kaydı
+            </h2>
+            <form onSubmit={handleAddStudent} className="grid grid-cols-2 gap-3 text-xs">
+              <input
+                type="text"
+                required
+                placeholder="Ad Soyad"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <input
+                type="text"
+                placeholder="T.C. Kimlik No"
+                value={tc}
+                onChange={(e) => setTc(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <input
+                type="text"
+                placeholder="Sınıf (Örn: 10-A)"
+                value={sinif}
+                onChange={(e) => setSinif(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <select
+                value={kat}
+                onChange={(e) => setKat(Number(e.target.value))}
+                className="border border-slate-200 rounded-xl px-3 py-2 bg-white"
+              >
+                <option value={1}>1. Kat</option>
+                <option value={2}>2. Kat</option>
+                <option value={3}>3. Kat</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Oda No (Örn: 102)"
+                value={oda}
+                onChange={(e) => setOda(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <input
+                type="text"
+                placeholder="Yatak (A, B, C, D)"
+                value={yatak}
+                onChange={(e) => setYatak(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <input
+                type="text"
+                placeholder="Anne WhatsApp Tel"
+                value={anneTel}
+                onChange={(e) => setAnneTel(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <input
+                type="text"
+                placeholder="Baba WhatsApp Tel"
+                value={babaTel}
+                onChange={(e) => setBabaTel(e.target.value)}
+                className="border border-slate-200 rounded-xl px-3 py-2"
+              />
+              <button
+                type="submit"
+                className="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold cursor-pointer"
+              >
+                Öğrenciyi Pansiyona Kaydet
+              </button>
+            </form>
+          </div>
+
+          {/* e-Okul / Excel (CSV) Toplu Öğrenci Aktarımı */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> e-Okul / Excel Toplu Öğrenci Yükleme
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Format: <code>Ad Soyad, TC, Sınıf, Kat, Oda, Yatak, AnneTel, BabaTel</code> (Her satıra 1 öğrenci)
+            </p>
+            <textarea
+              rows={4}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl p-3 text-xs font-mono bg-slate-50"
+            />
+            <button
+              onClick={handleBulkImport}
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+            >
+              <Upload className="w-4 h-4" /> Listeyi Toplu Olarak Sisteme Aktar
+            </button>
+          </div>
+        </div>
+
+        {/* Kayıtlı Öğrenciler ve Oda Yerleşim Tablosu */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Users className="w-4 h-4 text-blue-600" /> Pansiyon Öğrenci ve Oda Yerleşim Listesi ({students.length} Öğrenci)
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 text-left">
+                  <th className="p-2.5 rounded-l-lg">Ad Soyad</th>
+                  <th className="p-2.5">Sınıf</th>
+                  <th className="p-2.5">Kat / Oda / Yatak</th>
+                  <th className="p-2.5">Anne Tel</th>
+                  <th className="p-2.5">Baba Tel</th>
+                  <th className="p-2.5">Son Durum</th>
+                  <th className="p-2.5 rounded-r-lg text-right">İşlem</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students.map((s) => (
+                  <tr key={s.id} className="hover:bg-slate-50">
+                    <td className="p-2.5 font-bold text-slate-900">{s.name}</td>
+                    <td className="p-2.5">{s.sinif}</td>
+                    <td className="p-2.5 font-semibold text-blue-700">{s.kat}. Kat — Oda {s.oda} ({s.yatak})</td>
+                    <td className="p-2.5 font-mono">{s.anneTel}</td>
+                    <td className="p-2.5 font-mono">{s.babaTel}</td>
+                    <td className="p-2.5">
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-[11px]">
+                        {s.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="p-2.5 text-right">
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4 inline" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Nöbetçi Belletmen Çizelgesi & Nöbet Defteri Arşivi */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+            <h3 className="text-sm font-bold text-slate-900">Haftalık Nöbetçi Belletmen Çizelgesi</h3>
+            <div className="space-y-2 text-xs">
+              {nobetciler.map((n, idx) => (
+                <div key={idx} className="p-3 bg-slate-50 rounded-xl flex justify-between items-center">
+                  <strong className="text-slate-800">{n.gun}</strong>
+                  <span className="font-bold text-indigo-700">{n.belletmen}</span>
+                  <span className="text-slate-500">{n.kat}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+            <h3 className="text-sm font-bold text-slate-900">Son Kaydedilen Resmî Nöbet Tutanakları</h3>
+            <div className="space-y-2 text-xs">
+              {dutyLogs.map((log) => (
+                <div key={log.id} className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1">
+                  <div className="flex justify-between font-bold text-indigo-950">
+                    <span>{log.tarih} ({log.seans})</span>
+                    <span>{log.belletmenAd}</span>
+                  </div>
+                  <p className="text-slate-600">{log.notlar}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+'''
+
 def main():
     print("=========================================================")
-    print("   MEB PANSİYON - WHATSAPP BOT VE CANLIYA ALMA SİSTEMİ")
+    print("   MEB PANSİYON - 3 TAM MODÜL (VELİ, BELLETMEN, ADMİN)")
     print("=========================================================")
 
     kill_old_processes()
@@ -77,123 +1488,13 @@ def main():
 
     print(f"🌍 [AKTİF GÜVENLİ TÜNEL]: {tunnel_url}")
 
-    # WhatsApp Bot Kodu (whatsapp-bot.js)
-    whatsapp_bot_code = """
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const http = require('http');
-const fs = require('fs');
+    # Dosyaları güvenle diske yaz
+    write_file("app/api/pansiyon/route.ts", PANSIYON_API_TS)
+    write_file("app/veli/page.tsx", VELI_PAGE_TSX)
+    write_file("app/belletmen/page.tsx", BELLETMEN_PAGE_TSX)
+    write_file("app/admin/page.tsx", ADMIN_PAGE_TSX)
 
-const possiblePaths = [
-    'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-    'C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-    (process.env.LOCALAPPDATA || '') + '\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe',
-    'C:\\\\Program Files (x86)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe',
-    'C:\\\\Program Files\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe'
-];
-
-let executablePath = undefined;
-for (const path of possiblePaths) {
-    if (fs.existsSync(path)) {
-        executablePath = path;
-        break;
-    }
-}
-
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        executablePath: executablePath,
-        headless: false,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }
-});
-
-let isReady = false;
-
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-});
-
-client.on('ready', () => {
-    isReady = true;
-    console.log('\\n✅ [BAŞARILI] WhatsApp Botu Bağlandı ve Mesaj Göndermeye Hazır!\\n');
-});
-
-client.on('disconnected', () => {
-    isReady = false;
-});
-
-client.initialize();
-
-const server = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
-    }
-
-    if (req.method === 'POST' && req.url === '/send-otp') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', async () => {
-            try {
-                if (!isReady) {
-                    res.writeHead(503, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'WhatsApp Web henüz hazır değil.' }));
-                    return;
-                }
-
-                const { phone, code, customMessage } = JSON.parse(body);
-                let cleanPhone = (phone || '').replace(/\\D/g, '');
-                if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
-                if (!cleanPhone.startsWith('90')) cleanPhone = '90' + cleanPhone;
-
-                let message = customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nVeli Giriş Kodunuz: *${code}*`;
-
-                console.log(`⏳ [GÖNDERİLİYOR] Hedef: ${cleanPhone}`);
-
-                let targetChatId = `${cleanPhone}@c.us`;
-                if (client.info && client.info.wid && client.info.wid.user === cleanPhone) {
-                    targetChatId = client.info.wid._serialized;
-                } else {
-                    const numberDetails = await client.getNumberId(cleanPhone);
-                    if (!numberDetails) {
-                        res.writeHead(404, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: false, message: `Numara (${cleanPhone}) WhatsApp'ta bulunamadı.` }));
-                        return;
-                    }
-                    targetChatId = numberDetails._serialized;
-                }
-
-                await client.sendMessage(targetChatId, message, { sendSeen: false });
-                console.log(`✅ [MESAJ İLETİLDİ] -> ${cleanPhone}`);
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: 'WhatsApp bildirimi başarıyla gönderildi.' }));
-            } catch (err) {
-                console.error('❌ Hata:', err.message);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, message: err.message }));
-            }
-        });
-    } else {
-        res.writeHead(404);
-        res.end();
-    }
-});
-
-server.listen(3001, () => {
-    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde dinleniyor...');
-});
-"""
-    write_file("whatsapp-bot.js", whatsapp_bot_code)
-
-    # API Rotası (app/api/belletmen/bildirim/route.ts)
+    # Bildirim API rotasını güncel tünel adresiyle güncelle
     bildirim_api = f"""import {{ NextResponse }} from 'next/server';
 
 const BOT_URLS = ['{tunnel_url}', 'http://127.0.0.1:3001'];
@@ -205,8 +1506,13 @@ export async function POST(request: Request) {{
       return NextResponse.json({{ success: false, message: 'Telefon numarası eksik.' }}, {{ status: 400 }});
     }}
 
-    const seansMetni = seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)';
-    const customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz (${{veliTipi || 'Veli'}}),\\nÖğrenciniz *${{ogrenciAd}}* (Oda: ${{odaNo}}), *${{tarih}}* tarihli *${{seansMetni}}* yoklamasında pansiyonda *BULUNAMAMIŞTIR (YOK)*.\\n\\nLütfen acilen nöbetçi belletmen öğretmen ile iletişime geçiniz.`;
+    let customMessage = '';
+    if (seans === 'izin_onay') {{
+      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz,\\nÖğrenciniz *${{ogrenciAd}}* (Oda: ${{odaNo}}) için *${{tarih}}* tarihli izin talebiniz (*${{veliTipi}}*) onaylanmış ve nöbetçi belletmen yoklama sistemine *Otomatik İzinli* olarak işlenmiştir.`;
+    }} else {{
+      const seansMetni = seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)';
+      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz (${{veliTipi || 'Veli'}}),\\nÖğrenciniz *${{ogrenciAd}}* (Oda: ${{odaNo}}), *${{tarih}}* tarihli *${{seansMetni}}* yoklamasında pansiyonda *BULUNAMAMIŞTIR (YOK)*.\\n\\nLütfen acilen nöbetçi belletmen öğretmen ile iletişime geçiniz.`;
+    }}
 
     let lastError = 'WhatsApp Botuna ulaşılamadı.';
     for (const botUrl of BOT_URLS) {{
@@ -226,7 +1532,7 @@ export async function POST(request: Request) {{
         if (res.ok && data.success) {{
           return NextResponse.json({{
             success: true,
-            message: `✅ ${{ogrenciAd}} velisine (${{phone}}) WhatsApp bildirimi gönderildi!`
+            message: `✅ ${{ogrenciAd}} velisine (${{phone}}) WhatsApp bildirimi başarıyla gönderildi!`
           }});
         }} else {{
           lastError = data.message || lastError;
@@ -242,24 +1548,24 @@ export async function POST(request: Request) {{
 """
     write_file("app/api/belletmen/bildirim/route.ts", bildirim_api)
 
-    # WhatsApp Botunu Yeni Pencerede Başlat
-    print("\n🚀 WHATSAPP BOT PENCERESİ BAŞLATILIYOR...")
+    # WhatsApp Botunu Başlat
+    print("\n🚀 WHATSAPP BOT SUNUCUSU BAŞLATILIYOR...")
     os.system('start "WHATSAPP_BOT_SUNUCUSU" cmd /k "node whatsapp-bot.js"')
 
-    # Derleme & Vercel Push
+    # Derleme ve GitHub/Vercel Gönderimi
     if not run_command("npm run build", "Next.js derlemesi test ediliyor"):
         print("❌ Derleme hatası! Lütfen çıktıyı kontrol edin.")
         sys.exit(1)
 
     run_command("git add .", "Değişiklikler Git'e ekleniyor")
-    run_command('git commit -m "Belletmen bildirim API ve guncel arayuz yayina alindi" --allow-empty', "Commit oluşturuluyor")
+    run_command('git commit -m "Veli izin, Belletmen resmi nobet defteri PDF ve Admin toplu ogrenci modulleri eklendi" --allow-empty', "Commit oluşturuluyor")
     run_command("git push origin main", "GitHub ve Vercel'e gönderiliyor")
 
     print("\n=========================================================")
-    print("🎉 HER ŞEY HAZIR VE CANLIYA GÖNDERİLDİ!")
-    print("👉 Açılan Chrome'da WhatsApp Web'in yüklenmesini bekleyin.")
-    print("👉 Yaklaşık 45 saniye sonra https://pansiyon-yurt-sistemi.vercel.app/belletmen")
-    print("   sayfasını yenileyip 'Anneye Mesaj At' butonuna tıklayarak test edebilirsiniz.")
+    print("🎉 3 MODÜL DE BAŞARIYLA KURULDU VE CANLIYA ALINDI!")
+    print("👉 1. Veli İzin Portalı : https://pansiyon-yurt-sistemi.vercel.app/veli")
+    print("👉 2. Belletmen & PDF   : https://pansiyon-yurt-sistemi.vercel.app/belletmen")
+    print("👉 3. Yönetici Paneli   : https://pansiyon-yurt-sistemi.vercel.app/admin")
     print("=========================================================")
 
 if __name__ == "__main__":

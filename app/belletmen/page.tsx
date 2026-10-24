@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -10,84 +10,63 @@ interface Student {
   oda: string;
   yatak: string;
   tc: string;
+  sinif?: string;
   status: 'var' | 'yok' | 'izinli';
   izinAciklama?: string;
   anneTel: string;
   babaTel: string;
 }
 
-const initialStudents: Student[] = [
-  {
-    id: '1',
-    name: 'Ahmet Yılmaz',
-    kat: 1,
-    oda: '101',
-    yatak: 'A',
-    tc: '12345678901',
-    status: 'izinli',
-    izinAciklama: '2026-10-21 — 2026-10-30 (Ev İzni: akraba ziyareti)',
-    anneTel: '05416571469',
-    babaTel: '05416571469',
-  },
-  {
-    id: '2',
-    name: 'Mehmet Demir',
-    kat: 1,
-    oda: '101',
-    yatak: 'B',
-    tc: '12345678902',
-    status: 'izinli',
-    izinAciklama: '2026-10-20 — 2026-10-25 (Ev İzni: Aile ziyareti ve hafta sonu ev izni)',
-    anneTel: '05416571469',
-    babaTel: '05416571469',
-  },
-  {
-    id: '3',
-    name: 'Canberk Öztürk',
-    kat: 1,
-    oda: '102',
-    yatak: 'A',
-    tc: '12345678905',
-    status: 'yok',
-    anneTel: '05416571469',
-    babaTel: '05556667788',
-  },
-  {
-    id: '4',
-    name: 'Burak Kaya',
-    kat: 2,
-    oda: '201',
-    yatak: 'A',
-    tc: '12345678908',
-    status: 'var',
-    anneTel: '05416571469',
-    babaTel: '05416571469',
-  },
-  {
-    id: '5',
-    name: 'Emre Çelik',
-    kat: 3,
-    oda: '301',
-    yatak: 'A',
-    tc: '12345678909',
-    status: 'var',
-    anneTel: '05416571469',
-    babaTel: '05416571469',
-  }
-];
-
 export default function BelletmenPage() {
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [leaves, setLeaves] = useState<any[]>([]);
   const [selectedKat, setSelectedKat] = useState<number>(1);
   const [tarih, setTarih] = useState<string>('2026-10-24');
   const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
-  const [nobetNotu, setNobetNotu] = useState('');
 
-  const katStudents = students.filter((s) => s.kat === selectedKat);
+  // Resmî Nöbet Defteri Modal & PDF Durumu
+  const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
+  const [belletmenAd, setBelletmenAd] = useState('Cüneyt DEMİR');
+  const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
+
+  const loadData = async () => {
+    try {
+      const res = await fetch('/api/pansiyon');
+      const data = await res.json();
+      if (data.success && data.store) {
+        setStudents(data.store.students);
+        setLeaves(data.store.leaves);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Seçili tarihte öğrencinin veli izni var mı kontrol et
+  const getActiveLeaveText = (studentId: string) => {
+    const found = leaves.find(
+      (l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih
+    );
+    if (found) {
+      return `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})`;
+    }
+    return undefined;
+  };
+
+  const enrichedStudents = students.map((s) => {
+    const leaveTxt = getActiveLeaveText(s.id);
+    if (leaveTxt) {
+      return { ...s, status: 'izinli' as const, izinAciklama: leaveTxt };
+    }
+    return s;
+  });
+
+  const katStudents = enrichedStudents.filter((s) => s.kat === selectedKat);
   const katMevcudu = katStudents.length;
   const varSayisi = katStudents.filter((s) => s.status === 'var').length;
   const yokSayisi = katStudents.filter((s) => s.status === 'yok').length;
@@ -95,24 +74,36 @@ export default function BelletmenPage() {
 
   const odalar = Array.from(new Set(katStudents.map((s) => s.oda))).sort();
 
+  const syncAttendance = async (updated: Student[]) => {
+    setStudents(updated);
+    try {
+      await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_attendance', students: updated }),
+      });
+    } catch {}
+  };
+
   const handleStatusChange = (id: string, newStatus: 'var' | 'yok') => {
-    setStudents((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
-    );
+    const updated = students.map((s) => (s.id === id ? { ...s, status: newStatus } : s));
+    syncAttendance(updated);
   };
 
   const handlePhoneChange = (id: string, field: 'anneTel' | 'babaTel', value: string) => {
-    setStudents((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, [field]: value } : s))
-    );
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
   };
 
   const handleTumunuVarYap = () => {
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.kat === selectedKat && s.status !== 'izinli' ? { ...s, status: 'var' } : s
-      )
-    );
+    const updated = students.map((s) => {
+      const hasLeave = getActiveLeaveText(s.id);
+      if (s.kat === selectedKat && !hasLeave && s.status !== 'izinli') {
+        return { ...s, status: 'var' as const };
+      }
+      return s;
+    });
+    syncAttendance(updated);
+    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' olarak işaretlendi.` });
   };
 
   const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
@@ -141,7 +132,7 @@ export default function BelletmenPage() {
       } else {
         setFeedback({
           type: 'error',
-          text: data.message || 'WhatsApp mesajı iletilemedi. WhatsApp botunun açık olduğundan emin olun.'
+          text: data.message || 'WhatsApp mesajı iletilemedi. Botun açık olduğundan emin olun.'
         });
       }
     } catch {
@@ -151,11 +142,29 @@ export default function BelletmenPage() {
     }
   };
 
+  const handleSaveAndPrintDutyLog = async () => {
+    await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add_duty_log',
+        tarih,
+        seans: seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)',
+        belletmenAd,
+        notlar: nobetNotu,
+      }),
+    });
+    window.print();
+  };
+
+  const tumYoklar = enrichedStudents.filter((s) => s.status === 'yok');
+  const tumIzinliler = enrichedStudents.filter((s) => s.status === 'izinli');
+
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
-      <div className="max-w-5xl mx-auto space-y-5">
+      <div className="max-w-5xl mx-auto space-y-5 print:hidden">
 
-        {/* Üst Bilgi ve Tarih / Seans Seçimi */}
+        {/* Üst Bilgi ve Navigasyon */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div>
@@ -164,9 +173,14 @@ export default function BelletmenPage() {
                 Etüt (19:15) ve Yat Yoklaması (23:00) • Veli izin tarihleri arasında öğrenciler otomatik İzinli sayılır
               </p>
             </div>
-            <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full border border-emerald-200">
-              WhatsApp Bot Entegre
-            </span>
+            <div className="flex items-center gap-2">
+              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                Veli İzin Portalı
+              </a>
+              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
+                Yönetici (Admin) Paneli
+              </a>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
@@ -203,34 +217,12 @@ export default function BelletmenPage() {
             </div>
 
             <button
-              onClick={() => setNobetDefteriAcik(!nobetDefteriAcik)}
+              onClick={() => setNobetDefteriAcik(true)}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
             >
-              <FileText className="w-4 h-4" /> (Resmî Nöbet Defteri)
+              <FileText className="w-4 h-4" /> Resmî Nöbet Defteri & PDF Çıktı
             </button>
           </div>
-
-          {nobetDefteriAcik && (
-            <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
-              <h3 className="text-xs font-bold text-indigo-950">Günlük Nöbet Defteri Olay / Vukuat Kaydı</h3>
-              <textarea
-                rows={3}
-                value={nobetNotu}
-                onChange={(e) => setNobetNotu(e.target.value)}
-                placeholder="Nöbet süresince yaşanan önemli durumları buraya yazabilirsiniz..."
-                className="w-full p-3 text-xs bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <button
-                onClick={() => {
-                  setFeedback({ type: 'success', text: '✅ Nöbet defteri kaydı başarıyla eklendi.' });
-                  setNobetDefteriAcik(false);
-                }}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
-              >
-                Nöbet Defterini Kaydet
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Bildirim Durum Mesajı */}
@@ -341,7 +333,7 @@ export default function BelletmenPage() {
 
                         {student.status === 'izinli' ? (
                           <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 font-medium">
-                            <strong>Otomatik İzinli:</strong> {student.izinAciklama}
+                            <strong>Otomatik İzinli:</strong> {student.izinAciklama || 'Veli İzni Aktif'}
                           </div>
                         ) : (
                           <>
@@ -440,8 +432,169 @@ export default function BelletmenPage() {
             );
           })}
         </div>
-
       </div>
+
+      {/* RESMÎ MEB NÖBET DEFTERİ MODAL VE YAZDIRMA EKRANI */}
+      {nobetDefteriAcik && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto print:static print:bg-white print:p-0">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 shadow-2xl print:shadow-none print:rounded-none">
+            
+            {/* Modal Üst Çubuk (Yazdırırken gizlenir) */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
+              <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-600" /> Resmî MEB Pansiyon Nöbet Defteri ve PDF Raporu
+              </h2>
+              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Düzenlenebilir Alanlar (Yazdırırken gizlenir) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nöbetçi Belletmen Öğretmen</label>
+                <input
+                  type="text"
+                  value={belletmenAd}
+                  onChange={(e) => setBelletmenAd(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Yoklama Tarihi / Seans</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={`${tarih} — ${seans === 'etut' ? '19:15 Etüt Yoklaması' : '23:00 Yat Yoklaması'}`}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nöbet Vukuat / Revir / Olay Notları</label>
+                <textarea
+                  rows={3}
+                  value={nobetNotu}
+                  onChange={(e) => setNobetNotu(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-xs bg-white"
+                />
+              </div>
+            </div>
+
+            {/* RESMÎ A4 TUTANAK ŞABLONU */}
+            <div className="border border-slate-300 p-6 rounded-xl space-y-5 text-slate-900 print:border-none print:p-0">
+              <div className="text-center space-y-1 border-b-2 border-slate-800 pb-4">
+                <p className="text-xs font-bold uppercase">T.C.</p>
+                <p className="text-xs font-bold uppercase">MİLLÎ EĞİTİM BAKANLIĞI</p>
+                <p className="text-sm font-extrabold uppercase">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Müdürlüğü</p>
+                <p className="text-xs font-semibold uppercase text-slate-700">Öğrenci Pansiyonu Günlük Nöbet ve Yoklama Tutanağı</p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs border border-slate-300 p-3 rounded-lg">
+                <div><strong>Tarih:</strong> {tarih}</div>
+                <div><strong>Seans:</strong> {seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'}</div>
+                <div><strong>Toplam Kayıtlı:</strong> {enrichedStudents.length}</div>
+                <div><strong>Mevcut (Var):</strong> {enrichedStudents.filter(s => s.status === 'var').length}</div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-rose-600">
+                  1. Yoklamada Bulunmayan (Yok / Habersiz) Öğrenciler ({tumYoklar.length})
+                </h4>
+                {tumYoklar.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic pl-2">Yoklamada habersiz eksik öğrenci bulunmamaktadır.</p>
+                ) : (
+                  <table className="w-full text-xs border-collapse border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 p-1.5 text-left">Ad Soyad</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Oda / Yatak</th>
+                        <th className="border border-slate-300 p-1.5 text-left">T.C. Kimlik</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Veli İletişim</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tumYoklar.map((s) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-300 p-1.5 font-bold">{s.name}</td>
+                          <td className="border border-slate-300 p-1.5">Oda {s.oda} ({s.yatak})</td>
+                          <td className="border border-slate-300 p-1.5">{s.tc}</td>
+                          <td className="border border-slate-300 p-1.5">{s.anneTel}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-amber-500">
+                  2. İzinli (Evci / Çarşı / Raporlu) Öğrenciler ({tumIzinliler.length})
+                </h4>
+                {tumIzinliler.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic pl-2">İzinli öğrenci bulunmamaktadır.</p>
+                ) : (
+                  <table className="w-full text-xs border-collapse border border-slate-300">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 p-1.5 text-left">Ad Soyad</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Oda</th>
+                        <th className="border border-slate-300 p-1.5 text-left">İzin Detayı</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tumIzinliler.map((s) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-300 p-1.5 font-bold">{s.name}</td>
+                          <td className="border border-slate-300 p-1.5">Oda {s.oda}</td>
+                          <td className="border border-slate-300 p-1.5">{s.izinAciklama || 'Veli İzni'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-2 border-l-4 border-indigo-600">
+                  3. Nöbetçi Belletmen Günlük Vukuat ve Değerlendirme Notu
+                </h4>
+                <div className="p-3 border border-slate-300 rounded-lg text-xs min-h-[70px] whitespace-pre-wrap">
+                  {nobetNotu}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs">
+                <div>
+                  <p className="font-bold">Nöbetçi Belletmen Öğretmen</p>
+                  <p className="mt-1 text-slate-700">{belletmenAd}</p>
+                  <p className="mt-6 text-slate-400">İmza</p>
+                </div>
+                <div>
+                  <p className="font-bold">Pansiyondan Sorumlu Müdür Yardımcısı</p>
+                  <p className="mt-1 text-slate-700">İdare Onayı</p>
+                  <p className="mt-6 text-slate-400">İmza / Mühür</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 print:hidden">
+              <button
+                onClick={() => setNobetDefteriAcik(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Kapat
+              </button>
+              <button
+                onClick={handleSaveAndPrintDutyLog}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-md cursor-pointer"
+              >
+                <Printer className="w-4 h-4" /> Kaydet ve Resmî PDF / Yazıcı Çıktısı Al
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
