@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BOT_URLS = ['https://puzzle-forth-laid-grades.trycloudflare.com', 'http://127.0.0.1:3001', 'http://localhost:3001'];
+const BOT_URLS = ['https://yale-agricultural-stat-apply.trycloudflare.com', 'http://127.0.0.1:3001', 'http://localhost:3001'];
 
 export async function POST(request: Request) {
   try {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       success: false,
       message: lastError,
       customMessage,
-      tunnelUrl: 'https://puzzle-forth-laid-grades.trycloudflare.com'
+      tunnelUrl: 'https://yale-agricultural-stat-apply.trycloudflare.com'
     }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
