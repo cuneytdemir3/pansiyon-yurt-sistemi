@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Calendar, Clock, CheckCircle2, Send, Home, FileText, LogOut, UserCheck } from 'lucide-react';
+import { ShieldCheck, Calendar, Clock, Send, LogOut } from 'lucide-react';
 
 export default function VeliPortalPage() {
   const [students, setStudents] = useState<any[]>([]);
@@ -29,6 +29,12 @@ export default function VeliPortalPage() {
   useEffect(() => {
     fetchStore();
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    document.cookie = 'token=; path=/; max-age=0;';
+    window.location.href = '/veli/login';
+  };
 
   const currentStudent = students.find((s) => s.id === selectedStudentId) || students[0];
   const studentLeaves = leaves.filter((l) => l.studentId === (currentStudent?.id || '1'));
@@ -58,7 +64,6 @@ export default function VeliPortalPage() {
         setAciklama('');
         setMsg('✅ İzin talebiniz onaylandı! Nöbetçi belletmen ekranına Otomatik İzinli olarak yansıtıldı.');
 
-        // WhatsApp üzerinden Veliye de bilgilendirme mesajı gönder
         await fetch('/api/belletmen/bildirim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -83,7 +88,7 @@ export default function VeliPortalPage() {
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
 
-        {/* Üst Başlık */}
+        {/* Üst Başlık ve Çıkış Butonu */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
@@ -97,13 +102,16 @@ export default function VeliPortalPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <a href="/belletmen" className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-xl hover:bg-blue-100">
               Belletmen Ekranı
             </a>
-            <a href="/veli/login" className="flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl hover:bg-slate-200">
-              <LogOut className="w-3.5 h-3.5" /> Çıkış
-            </a>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" /> Çıkış Yap
+            </button>
           </div>
         </div>
 
@@ -112,7 +120,7 @@ export default function VeliPortalPage() {
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase">Öğrenci Seçimi (Test İçin Tüm Öğrenciler)</label>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">Öğrenci Seçimi</label>
                 <select
                   value={selectedStudentId}
                   onChange={(e) => setSelectedStudentId(e.target.value)}

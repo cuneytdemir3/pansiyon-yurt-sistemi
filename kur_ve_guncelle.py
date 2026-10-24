@@ -65,202 +65,12 @@ def run_command(command, description):
         return True
 
 # -------------------------------------------------------------------------
-# 1. MERKEZİ PANSİYON API ROTASI (Öğrenci, İzin, Yoklama, Nöbet Defteri)
-# -------------------------------------------------------------------------
-PANSIYON_API_TS = r'''import { NextResponse } from 'next/server';
-
-export interface StudentRecord {
-  id: string;
-  name: string;
-  tc: string;
-  sinif: string;
-  kat: number;
-  oda: string;
-  yatak: string;
-  anneTel: string;
-  babaTel: string;
-  status: 'var' | 'yok' | 'izinli';
-}
-
-export interface LeaveRecord {
-  id: string;
-  studentId: string;
-  studentName: string;
-  oda: string;
-  tip: string;
-  baslangic: string;
-  bitis: string;
-  aciklama: string;
-  veliTel: string;
-  createdAt: string;
-}
-
-export interface DutyLogRecord {
-  id: string;
-  tarih: string;
-  seans: string;
-  belletmenAd: string;
-  notlar: string;
-  toplam: number;
-  varSayisi: number;
-  yokSayisi: number;
-  izinliSayisi: number;
-}
-
-declare global {
-  var __pansiyonStore: {
-    students: StudentRecord[];
-    leaves: LeaveRecord[];
-    dutyLogs: DutyLogRecord[];
-    nobetciler: { gun: string; belletmen: string; kat: string }[];
-  } | undefined;
-}
-
-if (!globalThis.__pansiyonStore) {
-  globalThis.__pansiyonStore = {
-    students: [
-      { id: '1', name: 'Ahmet Yılmaz', tc: '12345678901', sinif: '10-A', kat: 1, oda: '101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
-      { id: '2', name: 'Mehmet Demir', tc: '12345678902', sinif: '11-B', kat: 1, oda: '101', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
-      { id: '3', name: 'Canberk Öztürk', tc: '12345678905', sinif: '9-A', kat: 1, oda: '102', yatak: 'A', anneTel: '05416571469', babaTel: '05556667788', status: 'yok' },
-      { id: '4', name: 'Burak Kaya', tc: '12345678908', sinif: '10-C', kat: 2, oda: '201', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
-      { id: '5', name: 'Emre Çelik', tc: '12345678909', sinif: '12-A', kat: 3, oda: '301', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
-    ],
-    leaves: [
-      { id: '101', studentId: '1', studentName: 'Ahmet Yılmaz', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-21', bitis: '2026-10-30', aciklama: 'Akraba ziyareti', veliTel: '05416571469', createdAt: '2026-10-21' },
-      { id: '102', studentId: '2', studentName: 'Mehmet Demir', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-20', bitis: '2026-10-25', aciklama: 'Aile ziyareti ve hafta sonu ev izni', veliTel: '05416571469', createdAt: '2026-10-20' },
-    ],
-    dutyLogs: [
-      { id: '1', tarih: '2026-10-24', seans: 'Etüt (19:15)', belletmenAd: 'Cüneyt DEMİR', notlar: 'Etüt yoklaması zamanında alındı. Oda 102 Canberk Öztürk yoklamada bulunmadı, velisine bilgi verildi.', toplam: 5, varSayisi: 2, yokSayisi: 1, izinliSayisi: 2 }
-    ],
-    nobetciler: [
-      { gun: 'Pazartesi', belletmen: 'Cüneyt DEMİR', kat: 'Tüm Katlar' },
-      { gun: 'Salı', belletmen: 'Ali KAYA', kat: '1. ve 2. Kat' },
-      { gun: 'Çarşamba', belletmen: 'Mehmet YILMAZ', kat: '3. Kat' },
-      { gun: 'Perşembe', belletmen: 'Cüneyt DEMİR', kat: 'Tüm Katlar' },
-      { gun: 'Cuma', belletmen: 'Hasan DEMİR', kat: 'Hafta Sonu Nöbeti' },
-    ]
-  };
-}
-
-export async function GET() {
-  return NextResponse.json({
-    success: true,
-    store: globalThis.__pansiyonStore
-  });
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { action } = body;
-    const store = globalThis.__pansiyonStore!;
-
-    if (action === 'add_leave') {
-      const { studentId, tip, baslangic, bitis, aciklama, veliTel } = body;
-      const st = store.students.find((s) => s.id === studentId) || store.students[0];
-      const newLeave: LeaveRecord = {
-        id: Date.now().toString(),
-        studentId: st.id,
-        studentName: st.name,
-        oda: st.oda,
-        tip: tip || 'Evci İzni',
-        baslangic,
-        bitis,
-        aciklama: aciklama || 'Veli talebi',
-        veliTel: veliTel || st.anneTel,
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      store.leaves.unshift(newLeave);
-      st.status = 'izinli';
-      return NextResponse.json({ success: true, message: 'İzin talebi onaylandı ve belletmen ekranına otomatik işlendi.', store });
-    }
-
-    if (action === 'update_attendance') {
-      const { students } = body;
-      if (Array.isArray(students)) {
-        store.students = students;
-      }
-      return NextResponse.json({ success: true, message: 'Yoklama kayıtları güncellendi.', store });
-    }
-
-    if (action === 'add_student') {
-      const { name, tc, sinif, kat, oda, yatak, anneTel, babaTel } = body;
-      const newStudent: StudentRecord = {
-        id: Date.now().toString(),
-        name,
-        tc: tc || '10000000000',
-        sinif: sinif || '9-A',
-        kat: Number(kat) || 1,
-        oda: oda || '101',
-        yatak: yatak || 'A',
-        anneTel: anneTel || '05416571469',
-        babaTel: babaTel || '05416571469',
-        status: 'var',
-      };
-      store.students.push(newStudent);
-      return NextResponse.json({ success: true, message: `${name} pansiyon listesine eklendi.`, store });
-    }
-
-    if (action === 'bulk_import') {
-      const { rows } = body;
-      let added = 0;
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          if (!r.name) continue;
-          store.students.push({
-            id: (Date.now() + Math.random()).toString(),
-            name: r.name.trim(),
-            tc: (r.tc || '10000000000').trim(),
-            sinif: (r.sinif || '9-A').trim(),
-            kat: Number(r.kat) || 1,
-            oda: (r.oda || '101').trim(),
-            yatak: (r.yatak || 'A').trim(),
-            anneTel: (r.anneTel || '05416571469').trim(),
-            babaTel: (r.babaTel || '05416571469').trim(),
-            status: 'var',
-          });
-          added++;
-        }
-      }
-      return NextResponse.json({ success: true, message: `${added} öğrenci başarıyla toplu olarak yüklendi.`, store });
-    }
-
-    if (action === 'delete_student') {
-      store.students = store.students.filter((s) => s.id !== body.id);
-      return NextResponse.json({ success: true, message: 'Öğrenci kaydı silindi.', store });
-    }
-
-    if (action === 'add_duty_log') {
-      const { tarih, seans, belletmenAd, notlar } = body;
-      const newLog: DutyLogRecord = {
-        id: Date.now().toString(),
-        tarih,
-        seans,
-        belletmenAd: belletmenAd || 'Nöbetçi Belletmen',
-        notlar,
-        toplam: store.students.length,
-        varSayisi: store.students.filter((s) => s.status === 'var').length,
-        yokSayisi: store.students.filter((s) => s.status === 'yok').length,
-        izinliSayisi: store.students.filter((s) => s.status === 'izinli').length,
-      };
-      store.dutyLogs.unshift(newLog);
-      return NextResponse.json({ success: true, message: 'Resmî nöbet defteri kaydı oluşturuldu.', store });
-    }
-
-    return NextResponse.json({ success: false, message: 'Geçersiz işlem.' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
-  }
-}
-'''
-
-# -------------------------------------------------------------------------
-# 2. VELİ PORTALI SAYFASI (/veli - Evci/Çarşı İzin Talebi + Yoklama Takibi)
+# 1. VELİ PORTALI SAYFASI (/veli - Güvenli Çıkış Butonu Eklendi)
 # -------------------------------------------------------------------------
 VELI_PAGE_TSX = r''''use client';
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Calendar, Clock, CheckCircle2, Send, Home, FileText, LogOut, UserCheck } from 'lucide-react';
+import { ShieldCheck, Calendar, Clock, Send, LogOut } from 'lucide-react';
 
 export default function VeliPortalPage() {
   const [students, setStudents] = useState<any[]>([]);
@@ -288,6 +98,12 @@ export default function VeliPortalPage() {
   useEffect(() => {
     fetchStore();
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    document.cookie = 'token=; path=/; max-age=0;';
+    window.location.href = '/veli/login';
+  };
 
   const currentStudent = students.find((s) => s.id === selectedStudentId) || students[0];
   const studentLeaves = leaves.filter((l) => l.studentId === (currentStudent?.id || '1'));
@@ -317,7 +133,6 @@ export default function VeliPortalPage() {
         setAciklama('');
         setMsg('✅ İzin talebiniz onaylandı! Nöbetçi belletmen ekranına Otomatik İzinli olarak yansıtıldı.');
 
-        // WhatsApp üzerinden Veliye de bilgilendirme mesajı gönder
         await fetch('/api/belletmen/bildirim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -342,7 +157,7 @@ export default function VeliPortalPage() {
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
 
-        {/* Üst Başlık */}
+        {/* Üst Başlık ve Çıkış Butonu */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
@@ -356,13 +171,16 @@ export default function VeliPortalPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <a href="/belletmen" className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-xl hover:bg-blue-100">
               Belletmen Ekranı
             </a>
-            <a href="/veli/login" className="flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl hover:bg-slate-200">
-              <LogOut className="w-3.5 h-3.5" /> Çıkış
-            </a>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" /> Çıkış Yap
+            </button>
           </div>
         </div>
 
@@ -371,7 +189,7 @@ export default function VeliPortalPage() {
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
               <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase">Öğrenci Seçimi (Test İçin Tüm Öğrenciler)</label>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">Öğrenci Seçimi</label>
                 <select
                   value={selectedStudentId}
                   onChange={(e) => setSelectedStudentId(e.target.value)}
@@ -544,12 +362,12 @@ export default function VeliPortalPage() {
 '''
 
 # -------------------------------------------------------------------------
-# 3. BELLETMEN EKRANI + RESMÎ MEB NÖBET DEFTERİ PDF ÇIKTISI (/belletmen)
+# 2. BELLETMEN EKRANI (/belletmen - Güvenli Çıkış Butonu Eklendi)
 # -------------------------------------------------------------------------
 BELLETMEN_PAGE_TSX = r''''use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X } from 'lucide-react';
+import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X, LogOut } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -575,7 +393,6 @@ export default function BelletmenPage() {
   const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Resmî Nöbet Defteri Modal & PDF Durumu
   const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
   const [belletmenAd, setBelletmenAd] = useState('Cüneyt DEMİR');
   const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
@@ -595,7 +412,12 @@ export default function BelletmenPage() {
     loadData();
   }, []);
 
-  // Seçili tarihte öğrencinin veli izni var mı kontrol et
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    document.cookie = 'token=; path=/; max-age=0;';
+    window.location.href = '/';
+  };
+
   const getActiveLeaveText = (studentId: string) => {
     const found = leaves.find(
       (l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih
@@ -712,22 +534,28 @@ export default function BelletmenPage() {
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="max-w-5xl mx-auto space-y-5 print:hidden">
 
-        {/* Üst Bilgi ve Navigasyon */}
+        {/* Üst Bilgi, Navigasyon ve Çıkış Butonu */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h1 className="text-lg md:text-xl font-bold text-slate-800">Nöbetçi Belletmen Yoklama & İzin Ekranı</h1>
               <p className="text-xs text-slate-500">
                 Etüt (19:15) ve Yat Yoklaması (23:00) • Veli izin tarihleri arasında öğrenciler otomatik İzinli sayılır
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                Veli İzin Portalı
+            <div className="flex flex-wrap items-center gap-2">
+              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-100">
+                Veli Portalı
               </a>
-              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
-                Yönetici (Admin) Paneli
+              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-200 hover:bg-indigo-100">
+                Yönetici Paneli
               </a>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" /> Çıkış Yap
+              </button>
             </div>
           </div>
 
@@ -987,7 +815,6 @@ export default function BelletmenPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto print:static print:bg-white print:p-0">
           <div className="bg-white rounded-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 shadow-2xl print:shadow-none print:rounded-none">
             
-            {/* Modal Üst Çubuk (Yazdırırken gizlenir) */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
               <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-indigo-600" /> Resmî MEB Pansiyon Nöbet Defteri ve PDF Raporu
@@ -997,7 +824,6 @@ export default function BelletmenPage() {
               </button>
             </div>
 
-            {/* Düzenlenebilir Alanlar (Yazdırırken gizlenir) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Nöbetçi Belletmen Öğretmen</label>
@@ -1028,7 +854,6 @@ export default function BelletmenPage() {
               </div>
             </div>
 
-            {/* RESMÎ A4 TUTANAK ŞABLONU */}
             <div className="border border-slate-300 p-6 rounded-xl space-y-5 text-slate-900 print:border-none print:p-0">
               <div className="text-center space-y-1 border-b-2 border-slate-800 pb-4">
                 <p className="text-xs font-bold uppercase">T.C.</p>
@@ -1148,336 +973,9 @@ export default function BelletmenPage() {
 }
 '''
 
-# -------------------------------------------------------------------------
-# 4. YÖNETİCİ / ADMİN PANELİ (/admin - e-Okul Excel Yükleme & Oda Matrisi)
-# -------------------------------------------------------------------------
-ADMIN_PAGE_TSX = r''''use client';
-
-import React, { useState, useEffect } from 'react';
-import { Users, Upload, Plus, Trash2, Home, Shield, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
-
-export default function AdminDashboardPage() {
-  const [students, setStudents] = useState<any[]>([]);
-  const [nobetciler, setNobetciler] = useState<any[]>([]);
-  const [dutyLogs, setDutyLogs] = useState<any[]>([]);
-  const [msg, setMsg] = useState('');
-
-  // Yeni Öğrenci Form State
-  const [name, setName] = useState('');
-  const [tc, setTc] = useState('');
-  const [sinif, setSinif] = useState('9-A');
-  const [kat, setKat] = useState(1);
-  const [oda, setOda] = useState('101');
-  const [yatak, setYatak] = useState('A');
-  const [anneTel, setAnneTel] = useState('05416571469');
-  const [babaTel, setBabaTel] = useState('05416571469');
-
-  // Toplu CSV / Excel Yükleme State
-  const [csvText, setCsvText] = useState(
-    'Ali Veli, 12345678910, 9-B, 1, 103, A, 05416571469, 05416571469\nAyşe Fatma, 12345678911, 10-A, 2, 202, B, 05416571469, 05416571469'
-  );
-
-  const fetchAll = async () => {
-    try {
-      const res = await fetch('/api/pansiyon');
-      const data = await res.json();
-      if (data.success && data.store) {
-        setStudents(data.store.students);
-        setNobetciler(data.store.nobetciler || []);
-        setDutyLogs(data.store.dutyLogs || []);
-      }
-    } catch {}
-  };
-
-  useEffect(() => {
-    fetchAll();
-  }, []);
-
-  const handleAddStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name) return;
-    const res = await fetch('/api/pansiyon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'add_student',
-        name,
-        tc,
-        sinif,
-        kat,
-        oda,
-        yatak,
-        anneTel,
-        babaTel,
-      }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setStudents(data.store.students);
-      setName('');
-      setTc('');
-      setMsg(data.message);
-    }
-  };
-
-  const handleBulkImport = async () => {
-    const lines = csvText.split('\n').map((l) => l.trim()).filter(Boolean);
-    const rows = lines.map((line) => {
-      const parts = line.split(',').map((p) => p.trim());
-      return {
-        name: parts[0],
-        tc: parts[1] || '10000000000',
-        sinif: parts[2] || '9-A',
-        kat: Number(parts[3]) || 1,
-        oda: parts[4] || '101',
-        yatak: parts[5] || 'A',
-        anneTel: parts[6] || '05416571469',
-        babaTel: parts[7] || '05416571469',
-      };
-    });
-
-    const res = await fetch('/api/pansiyon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'bulk_import', rows }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setStudents(data.store.students);
-      setMsg(data.message);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    const res = await fetch('/api/pansiyon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete_student', id }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setStudents(data.store.students);
-      setMsg('Öğrenci silindi.');
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-
-        {/* Üst Başlık */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-              <Shield className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-lg md:text-xl font-extrabold text-slate-900">Pansiyon İdare & Yönetici Paneli</h1>
-              <p className="text-xs text-slate-500">e-Okul Excel öğrenci yükleme, oda/yatak yerleştirme ve nöbet defteri arşivi</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <a href="/belletmen" className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-2 rounded-xl border border-blue-200">
-              Belletmen Yoklama Ekranı
-            </a>
-            <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200">
-              Veli İzin Portalı
-            </a>
-          </div>
-        </div>
-
-        {msg && (
-          <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-2xl text-xs font-bold flex justify-between">
-            <span>✅ {msg}</span>
-            <button onClick={() => setMsg('')} className="underline">Kapat</button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Tekli Öğrenci Ekleme */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-indigo-600" /> Yeni Öğrenci & Oda Kaydı
-            </h2>
-            <form onSubmit={handleAddStudent} className="grid grid-cols-2 gap-3 text-xs">
-              <input
-                type="text"
-                required
-                placeholder="Ad Soyad"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="T.C. Kimlik No"
-                value={tc}
-                onChange={(e) => setTc(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="Sınıf (Örn: 10-A)"
-                value={sinif}
-                onChange={(e) => setSinif(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <select
-                value={kat}
-                onChange={(e) => setKat(Number(e.target.value))}
-                className="border border-slate-200 rounded-xl px-3 py-2 bg-white"
-              >
-                <option value={1}>1. Kat</option>
-                <option value={2}>2. Kat</option>
-                <option value={3}>3. Kat</option>
-              </select>
-              <input
-                type="text"
-                placeholder="Oda No (Örn: 102)"
-                value={oda}
-                onChange={(e) => setOda(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="Yatak (A, B, C, D)"
-                value={yatak}
-                onChange={(e) => setYatak(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="Anne WhatsApp Tel"
-                value={anneTel}
-                onChange={(e) => setAnneTel(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="Baba WhatsApp Tel"
-                value={babaTel}
-                onChange={(e) => setBabaTel(e.target.value)}
-                className="border border-slate-200 rounded-xl px-3 py-2"
-              />
-              <button
-                type="submit"
-                className="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold cursor-pointer"
-              >
-                Öğrenciyi Pansiyona Kaydet
-              </button>
-            </form>
-          </div>
-
-          {/* e-Okul / Excel (CSV) Toplu Öğrenci Aktarımı */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> e-Okul / Excel Toplu Öğrenci Yükleme
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              Format: <code>Ad Soyad, TC, Sınıf, Kat, Oda, Yatak, AnneTel, BabaTel</code> (Her satıra 1 öğrenci)
-            </p>
-            <textarea
-              rows={4}
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl p-3 text-xs font-mono bg-slate-50"
-            />
-            <button
-              onClick={handleBulkImport}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer"
-            >
-              <Upload className="w-4 h-4" /> Listeyi Toplu Olarak Sisteme Aktar
-            </button>
-          </div>
-        </div>
-
-        {/* Kayıtlı Öğrenciler ve Oda Yerleşim Tablosu */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-600" /> Pansiyon Öğrenci ve Oda Yerleşim Listesi ({students.length} Öğrenci)
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-700 text-left">
-                  <th className="p-2.5 rounded-l-lg">Ad Soyad</th>
-                  <th className="p-2.5">Sınıf</th>
-                  <th className="p-2.5">Kat / Oda / Yatak</th>
-                  <th className="p-2.5">Anne Tel</th>
-                  <th className="p-2.5">Baba Tel</th>
-                  <th className="p-2.5">Son Durum</th>
-                  <th className="p-2.5 rounded-r-lg text-right">İşlem</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {students.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50">
-                    <td className="p-2.5 font-bold text-slate-900">{s.name}</td>
-                    <td className="p-2.5">{s.sinif}</td>
-                    <td className="p-2.5 font-semibold text-blue-700">{s.kat}. Kat — Oda {s.oda} ({s.yatak})</td>
-                    <td className="p-2.5 font-mono">{s.anneTel}</td>
-                    <td className="p-2.5 font-mono">{s.babaTel}</td>
-                    <td className="p-2.5">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-[11px]">
-                        {s.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="p-2.5 text-right">
-                      <button
-                        onClick={() => handleDelete(s.id)}
-                        className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4 inline" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Nöbetçi Belletmen Çizelgesi & Nöbet Defteri Arşivi */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">Haftalık Nöbetçi Belletmen Çizelgesi</h3>
-            <div className="space-y-2 text-xs">
-              {nobetciler.map((n, idx) => (
-                <div key={idx} className="p-3 bg-slate-50 rounded-xl flex justify-between items-center">
-                  <strong className="text-slate-800">{n.gun}</strong>
-                  <span className="font-bold text-indigo-700">{n.belletmen}</span>
-                  <span className="text-slate-500">{n.kat}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">Son Kaydedilen Resmî Nöbet Tutanakları</h3>
-            <div className="space-y-2 text-xs">
-              {dutyLogs.map((log) => (
-                <div key={log.id} className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1">
-                  <div className="flex justify-between font-bold text-indigo-950">
-                    <span>{log.tarih} ({log.seans})</span>
-                    <span>{log.belletmenAd}</span>
-                  </div>
-                  <p className="text-slate-600">{log.notlar}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-}
-'''
-
 def main():
     print("=========================================================")
-    print("   MEB PANSİYON - 3 TAM MODÜL (VELİ, BELLETMEN, ADMİN)")
+    print("   VELİ VE BELLETMEN ÇIKIŞ BUTONU GÜNCELLEMESİ")
     print("=========================================================")
 
     kill_old_processes()
@@ -1488,13 +986,10 @@ def main():
 
     print(f"🌍 [AKTİF GÜVENLİ TÜNEL]: {tunnel_url}")
 
-    # Dosyaları güvenle diske yaz
-    write_file("app/api/pansiyon/route.ts", PANSIYON_API_TS)
     write_file("app/veli/page.tsx", VELI_PAGE_TSX)
     write_file("app/belletmen/page.tsx", BELLETMEN_PAGE_TSX)
-    write_file("app/admin/page.tsx", ADMIN_PAGE_TSX)
 
-    # Bildirim API rotasını güncel tünel adresiyle güncelle
+    # Bildirim API rotasını güncel tünel adresiyle tazele
     bildirim_api = f"""import {{ NextResponse }} from 'next/server';
 
 const BOT_URLS = ['{tunnel_url}', 'http://127.0.0.1:3001'];
@@ -1548,24 +1043,19 @@ export async function POST(request: Request) {{
 """
     write_file("app/api/belletmen/bildirim/route.ts", bildirim_api)
 
-    # WhatsApp Botunu Başlat
     print("\n🚀 WHATSAPP BOT SUNUCUSU BAŞLATILIYOR...")
     os.system('start "WHATSAPP_BOT_SUNUCUSU" cmd /k "node whatsapp-bot.js"')
 
-    # Derleme ve GitHub/Vercel Gönderimi
     if not run_command("npm run build", "Next.js derlemesi test ediliyor"):
         print("❌ Derleme hatası! Lütfen çıktıyı kontrol edin.")
         sys.exit(1)
 
     run_command("git add .", "Değişiklikler Git'e ekleniyor")
-    run_command('git commit -m "Veli izin, Belletmen resmi nobet defteri PDF ve Admin toplu ogrenci modulleri eklendi" --allow-empty', "Commit oluşturuluyor")
+    run_command('git commit -m "Veli ve Belletmen panellerine guvenli Cikis Yap butonu eklendi" --allow-empty', "Commit oluşturuluyor")
     run_command("git push origin main", "GitHub ve Vercel'e gönderiliyor")
 
     print("\n=========================================================")
-    print("🎉 3 MODÜL DE BAŞARIYLA KURULDU VE CANLIYA ALINDI!")
-    print("👉 1. Veli İzin Portalı : https://pansiyon-yurt-sistemi.vercel.app/veli")
-    print("👉 2. Belletmen & PDF   : https://pansiyon-yurt-sistemi.vercel.app/belletmen")
-    print("👉 3. Yönetici Paneli   : https://pansiyon-yurt-sistemi.vercel.app/admin")
+    print("🎉 ÇIKIŞ BUTONLARI EKLENDİ VE CANLIYA GÖNDERİLDİ!")
     print("=========================================================")
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X } from 'lucide-react';
+import { Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2, Phone, Printer, X, LogOut } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -27,7 +27,6 @@ export default function BelletmenPage() {
   const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Resmî Nöbet Defteri Modal & PDF Durumu
   const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
   const [belletmenAd, setBelletmenAd] = useState('Cüneyt DEMİR');
   const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
@@ -47,7 +46,12 @@ export default function BelletmenPage() {
     loadData();
   }, []);
 
-  // Seçili tarihte öğrencinin veli izni var mı kontrol et
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    document.cookie = 'token=; path=/; max-age=0;';
+    window.location.href = '/';
+  };
+
   const getActiveLeaveText = (studentId: string) => {
     const found = leaves.find(
       (l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih
@@ -164,22 +168,28 @@ export default function BelletmenPage() {
     <div className="min-h-screen bg-slate-100 p-4 md:p-6">
       <div className="max-w-5xl mx-auto space-y-5 print:hidden">
 
-        {/* Üst Bilgi ve Navigasyon */}
+        {/* Üst Bilgi, Navigasyon ve Çıkış Butonu */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h1 className="text-lg md:text-xl font-bold text-slate-800">Nöbetçi Belletmen Yoklama & İzin Ekranı</h1>
               <p className="text-xs text-slate-500">
                 Etüt (19:15) ve Yat Yoklaması (23:00) • Veli izin tarihleri arasında öğrenciler otomatik İzinli sayılır
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                Veli İzin Portalı
+            <div className="flex flex-wrap items-center gap-2">
+              <a href="/veli" className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-100">
+                Veli Portalı
               </a>
-              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
-                Yönetici (Admin) Paneli
+              <a href="/admin" className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-200 hover:bg-indigo-100">
+                Yönetici Paneli
               </a>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" /> Çıkış Yap
+              </button>
             </div>
           </div>
 
@@ -439,7 +449,6 @@ export default function BelletmenPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto print:static print:bg-white print:p-0">
           <div className="bg-white rounded-2xl max-w-3xl w-full p-6 md:p-8 space-y-6 shadow-2xl print:shadow-none print:rounded-none">
             
-            {/* Modal Üst Çubuk (Yazdırırken gizlenir) */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
               <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-indigo-600" /> Resmî MEB Pansiyon Nöbet Defteri ve PDF Raporu
@@ -449,7 +458,6 @@ export default function BelletmenPage() {
               </button>
             </div>
 
-            {/* Düzenlenebilir Alanlar (Yazdırırken gizlenir) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Nöbetçi Belletmen Öğretmen</label>
@@ -480,7 +488,6 @@ export default function BelletmenPage() {
               </div>
             </div>
 
-            {/* RESMÎ A4 TUTANAK ŞABLONU */}
             <div className="border border-slate-300 p-6 rounded-xl space-y-5 text-slate-900 print:border-none print:p-0">
               <div className="text-center space-y-1 border-b-2 border-slate-800 pb-4">
                 <p className="text-xs font-bold uppercase">T.C.</p>

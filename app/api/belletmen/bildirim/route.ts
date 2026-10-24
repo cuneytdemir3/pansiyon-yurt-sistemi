@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BOT_URLS = ['https://gate-writers-aka-kde.trycloudflare.com', 'http://127.0.0.1:3001'];
+const BOT_URLS = ['https://porcelain-athens-cattle-this.trycloudflare.com', 'http://127.0.0.1:3001'];
 
 export async function POST(request: Request) {
   try {
