@@ -1,11 +1,32 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
+const fs = require('fs');
+
+// Bilgisayarda yüklü olan Chrome veya Edge yolunu otomatik tespit et
+const possiblePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+];
+
+let executablePath = undefined;
+for (const path of possiblePaths) {
+    if (fs.existsSync(path)) {
+        executablePath = path;
+        console.log('🌐 [TARAYICI BULUNDU]:', path);
+        break;
+    }
+}
 
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        executablePath: executablePath,
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
     }
 });
 
@@ -13,7 +34,7 @@ let isReady = false;
 
 client.on('qr', (qr) => {
     console.log('\n================================================');
-    console.log('[!] LÜTFEN AŞAĞIDAKİ QR KODU WHATSAPP İLE OKUTUN:');
+    console.log('📱 LÜTFEN AŞAĞIDAKİ QR KODU WHATSAPP İLE OKUTUN:');
     console.log('================================================\n');
     qrcode.generate(qr, { small: true });
 });
@@ -31,7 +52,6 @@ client.on('disconnected', () => {
 client.initialize();
 
 const server = http.createServer(async (req, res) => {
-    // Tarayıcıdan (Vercel veya localhost) doğrudan erişim için CORS izinleri
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
