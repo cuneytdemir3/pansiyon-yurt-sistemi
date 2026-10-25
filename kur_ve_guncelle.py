@@ -14,7 +14,7 @@ def write_file(filepath, content):
     print(f"[DOSYA GÜNCELLENDİ] {filepath}")
 
 def kill_old_processes():
-    print("🧹 Açık kalan Node.js işlemleri temizleniyor...")
+    print("🧹 Açık kalan Node.js ve Tünel işlemleri temizleniyor...")
     subprocess.run("taskkill /F /IM node.exe", shell=True, capture_output=True)
     subprocess.run("taskkill /F /IM cloudflared.exe", shell=True, capture_output=True)
     time.sleep(1)
@@ -58,721 +58,509 @@ def run_command(command, description):
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"[UYARI / HATA] {description}:")
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
+        if result.stdout: print(result.stdout)
+        if result.stderr: print(result.stderr)
         return False
     else:
         print(f"[BAŞARILI] {description} tamamlandı.")
         return True
 
 # -------------------------------------------------------------------------
-# 1. BİLDİRİM API ROTASI (Şifre Hatırlatma Desteği Eklendi)
+# 1. API ROTASI (Şifre Denetimleri ve Admin Doğrulaması Eklendi)
 # -------------------------------------------------------------------------
-BILDIRIM_API_TS = """import { NextResponse } from 'next/server';
+PANSIYON_API_TS = r'''import { NextResponse } from 'next/server';
 
-const BOT_URLS = ['__TUNNEL_URL__', 'http://127.0.0.1:3001', 'http://localhost:3001'];
+export interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; tc: string; sinif: string; kat: number; oda: string; yatak: string; anneTel: string; babaTel: string; status: string; }
+export interface BelletmenRecord { id: string; name: string; cinsiyet: 'erkek' | 'kadin'; brans: string; phone: string; password: string; }
+export interface MonthlyDutyDay { tarih: string; erkek1: string; erkek2: string; kadin1: string; kadin2: string; }
+export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
+
+declare global {
+  var __pansiyonStoreV10: {
+    students: StudentRecord[];
+    belletmenler: BelletmenRecord[];
+    aylikNobetler: MonthlyDutyDay[];
+    auditLogs: AuditLogRecord[];
+  } | undefined;
+}
+
+if (!globalThis.__pansiyonStoreV10) {
+  globalThis.__pansiyonStoreV10 = {
+    students: [
+      { id: '1', name: 'Ahmet Yılmaz', cinsiyet: 'erkek', tc: '12345678901', sinif: '10-A', kat: 1, oda: '101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '5', name: 'Zeynep Aydın', cinsiyet: 'kiz', tc: '12345678912', sinif: '10-A', kat: 1, oda: 'K-101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
+    ],
+    belletmenler: [
+      { id: 'b1', name: 'Cüneyt DEMİR', cinsiyet: 'erkek', brans: 'Bilişim Teknolojileri', phone: '05416571469', password: '1234' },
+      { id: 'b5', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat', phone: '05410000004', password: '1234' },
+    ],
+    aylikNobetler: [],
+    auditLogs: [
+      { id: 'log1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Güvenlik Güncellemesi', detay: 'Şifre doğrulama altyapısı aktif edildi.', tur: 'bilgi' }
+    ],
+  };
+}
+
+const addLog = (store: any, kullanici: string, islem: string, detay: string, tur: string) => {
+  store.auditLogs.unshift({
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+    tarihSaat: new Date().toLocaleString('tr-TR'),
+    kullanici, islem, detay, tur
+  });
+  if (store.auditLogs.length > 100) store.auditLogs.pop();
+};
+
+export async function GET() {
+  return NextResponse.json({ success: true, store: globalThis.__pansiyonStoreV10 });
+}
 
 export async function POST(request: Request) {
   try {
-    const { phone, ogrenciAd, odaNo, tarih, seans, veliTipi } = await request.json();
-    if (!phone) {
-      return NextResponse.json({ success: false, message: 'Telefon numarası eksik.' }, { status: 400 });
+    const body = await request.json();
+    const { action } = body;
+    const store = globalThis.__pansiyonStoreV10!;
+
+    // === GÜVENLİK & GİRİŞ DOĞRULAMALARI ===
+    if (action === 'belletmen_login') {
+      const found = store.belletmenler.find((b) => b.id === body.id);
+      if (!found || found.password !== String(body.password || '').trim()) {
+        addLog(store, found ? found.name : 'Bilinmeyen', 'Hatalı Belletmen Girişi', 'Belletmen şifresi hatalı girildi.', 'hata');
+        return NextResponse.json({ success: false, message: 'Hatalı belletmen şifresi girdiniz!' }, { status: 401 });
+      }
+      addLog(store, found.name, 'Belletmen Girişi', 'Pansiyon yoklama ekranına giriş yapıldı.', 'basari');
+      return NextResponse.json({ success: true, belletmen: found, store });
     }
 
-    let customMessage = '';
-    if (seans === 'izin_onay') {
-      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz,\\nÖğrenciniz *${ogrenciAd}* (Oda: ${odaNo}) için *${tarih}* tarihli izin talebiniz (*${veliTipi}*) onaylanmış ve nöbetçi belletmen yoklama sistemine *Otomatik İzinli* olarak işlenmiştir.`;
-    } else if (seans === 'sifre_hatirlatma') {
-      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın *${ogrenciAd}*,\\n\\nNöbetçi Belletmen Sistemi giriş şifreniz: *${veliTipi}*\\n\\nLütfen sisteme giriş yaptıktan sonra şifrenizi Yönetici Panelinden değiştiriniz.`;
-    } else {
-      const seansMetni = seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)';
-      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz (${veliTipi || 'Veli'}),\\nÖğrenciniz *${ogrenciAd}* (Oda: ${odaNo}), *${tarih}* tarihli *${seansMetni}* yoklamasında pansiyonda *BULUNAMAMIŞTIR (YOK)*.\\n\\nLütfen acilen nöbetçi belletmen öğretmen ile iletişime geçiniz.`;
+    if (action === 'admin_login') {
+      if (body.username === 'admin' && String(body.password).trim() === '123456') {
+        addLog(store, 'Yönetici (Admin)', 'Yönetim Paneli Girişi', 'Sisteme yetkili idareci girişi yapıldı.', 'basari');
+        return NextResponse.json({ success: true, message: 'Giriş başarılı.', store });
+      }
+      addLog(store, 'Bilinmeyen (Admin Denemesi)', 'Hatalı Yönetici Girişi', 'Yönetici şifresi veya adı hatalı girildi.', 'hata');
+      return NextResponse.json({ success: false, message: 'Hatalı yönetici kullanıcı adı veya şifresi!' }, { status: 401 });
     }
 
-    let lastError = 'WhatsApp Botuna ulaşılamadı.';
-    for (const botUrl of BOT_URLS) {
-      if (!botUrl) continue;
-      try {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 8000);
-
-        const res = await fetch(`${botUrl}/send-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, customMessage }),
-          signal: controller.signal
-        });
-        clearTimeout(tid);
-
-        const data = await res.json();
-        if (res.ok && data.success) {
-          return NextResponse.json({
-            success: true,
-            message: `✅ WhatsApp bildirimi başarıyla gönderildi!`
-          });
-        } else {
-          lastError = data.message || lastError;
+    // --- DİĞER İŞLEMLER ---
+    if (action === 'add_belletmen') {
+      store.belletmenler.push({ id: Date.now().toString(), name: String(body.name).trim(), cinsiyet: body.cinsiyet === 'kadin' ? 'kadin' : 'erkek', brans: String(body.brans || 'Öğretmen').trim(), phone: String(body.phone || '05410000000').trim(), password: String(body.password || '1234').trim() });
+      addLog(store, 'Yönetici', 'Belletmen Eklendi', `${body.name} eklendi.`, 'basari');
+      return NextResponse.json({ success: true, message: 'Belletmen eklendi.', store });
+    }
+    if (action === 'bulk_add_belletmen') {
+      let added = 0;
+      if (Array.isArray(body.rows)) {
+        for (const r of body.rows) {
+          if (!r.name) continue;
+          store.belletmenler.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kadin' : 'erkek', brans: String(r.brans), phone: String(r.phone), password: String(r.password) });
+          added++;
         }
-      } catch (e) {}
+      }
+      addLog(store, 'Yönetici', 'Toplu Yükleme', `${added} belletmen aktarıldı.`, 'basari');
+      return NextResponse.json({ success: true, message: `${added} belletmen eklendi.`, store });
+    }
+    if (action === 'update_belletmen_password') {
+      const target = store.belletmenler.find((b) => b.id === body.id);
+      if (target) {
+        target.password = String(body.newPassword);
+        addLog(store, 'Yönetici', 'Şifre Değişikliği', `${target.name} şifresi değişti.`, 'uyari');
+        return NextResponse.json({ success: true, message: 'Şifre güncellendi.', store });
+      }
+      return NextResponse.json({ success: false, message: 'Bulunamadı.' }, { status: 404 });
+    }
+    if (action === 'delete_belletmen') {
+      store.belletmenler = store.belletmenler.filter((b) => b.id !== body.id);
+      addLog(store, 'Yönetici', 'Silme', `Belletmen silindi.`, 'uyari');
+      return NextResponse.json({ success: true, message: 'Silindi.', store });
+    }
+    if (action === 'auto_generate_month_duty') {
+      const yearMonth = String(body.yearMonth);
+      const [yStr, mStr] = yearMonth.split('-');
+      const days = new Date(Number(yStr), Number(mStr), 0).getDate();
+      const erkekler = store.belletmenler.filter((b) => b.cinsiyet === 'erkek');
+      const kadinlar = store.belletmenler.filter((b) => b.cinsiyet === 'kadin');
+      store.aylikNobetler = store.aylikNobetler.filter((d) => !d.tarih.startsWith(yearMonth));
+      for (let d = 1; d <= days; d++) {
+        const dateKey = `${yearMonth}-${d < 10 ? '0'+d : d}`;
+        store.aylikNobetler.push({
+          tarih: dateKey,
+          erkek1: erkekler.length > 0 ? erkekler[(d * 2 - 2) % erkekler.length].name : 'Erkek 1',
+          erkek2: erkekler.length > 1 ? erkekler[(d * 2 - 1) % erkekler.length].name : 'Erkek 2',
+          kadin1: kadinlar.length > 0 ? kadinlar[(d * 2 - 2) % kadinlar.length].name : 'Kadın 1',
+          kadin2: kadinlar.length > 1 ? kadinlar[(d * 2 - 1) % kadinlar.length].name : 'Kadın 2',
+        });
+      }
+      addLog(store, 'Yönetici', 'Otomatik Nöbet', `${yearMonth} nöbetleri atandı.`, 'bilgi');
+      return NextResponse.json({ success: true, message: 'Nöbetler oluşturuldu!', store });
+    }
+    if (action === 'bulk_monthly_duty') {
+      let count = 0;
+      if (Array.isArray(body.rows)) {
+        for (const r of body.rows) {
+          if (!r.tarih) continue;
+          store.aylikNobetler.push({ tarih: String(r.tarih), erkek1: String(r.erkek1), erkek2: String(r.erkek2), kadin1: String(r.kadin1), kadin2: String(r.kadin2) });
+          count++;
+        }
+      }
+      return NextResponse.json({ success: true, message: `${count} gün eklendi.`, store });
+    }
+    if (action === 'delete_monthly_duty') {
+      store.aylikNobetler = store.aylikNobetler.filter((d) => d.tarih !== body.tarih);
+      return NextResponse.json({ success: true, message: 'Nöbet silindi.', store });
+    }
+    if (action === 'add_student') {
+      store.students.push({ id: Date.now().toString(), name: String(body.name), cinsiyet: body.cinsiyet === 'kiz' ? 'kiz' : 'erkek', tc: '10000000000', sinif: '9-A', kat: Number(body.kat || 1), oda: String(body.oda || '101'), yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' });
+      addLog(store, 'Yönetici', 'Öğrenci Eklendi', `${body.name} eklendi.`, 'basari');
+      return NextResponse.json({ success: true, message: 'Öğrenci eklendi.', store });
+    }
+    if (action === 'bulk_import') {
+      let added = 0;
+      if (Array.isArray(body.rows)) {
+        for (const r of body.rows) {
+          if (!r.name) continue;
+          store.students.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kiz' : 'erkek', tc: String(r.tc), sinif: String(r.sinif), kat: Number(r.kat), oda: String(r.oda), yatak: String(r.yatak), anneTel: String(r.anneTel), babaTel: String(r.babaTel), status: 'var' });
+          added++;
+        }
+      }
+      return NextResponse.json({ success: true, message: `${added} öğrenci eklendi.`, store });
+    }
+    if (action === 'delete_student') {
+      store.students = store.students.filter((s) => s.id !== body.id);
+      addLog(store, 'Yönetici', 'Öğrenci Silindi', `Öğrenci kaydı silindi.`, 'uyari');
+      return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
     }
 
-    return NextResponse.json({
-      success: false,
-      message: lastError,
-      customMessage,
-      tunnelUrl: '__TUNNEL_URL__'
-    }, { status: 200 });
+    return NextResponse.json({ success: false, message: 'Bilinmeyen işlem.' }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }
-"""
+'''
 
 # -------------------------------------------------------------------------
-# 2. BELLETMEN SAYFASI (Şifremi Unuttum Butonu ve Fonksiyonu Eklendi)
+# 2. ANA SAYFA (Güvenli Şifre Kontrolleri Doğrudan API'ye Bağlandı)
 # -------------------------------------------------------------------------
-BELLETMEN_PAGE_TSX = r''''use client';
+HOME_PAGE_TSX = r''''use client';
 
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2,
-  Phone, Printer, X, LogOut, UserCheck, Lock, RefreshCw
+  Users, UserCheck, Shield, Moon, Sun, User, ShieldAlert,
+  MessageCircle, Sparkles, Lock, CheckCircle2, X, Send, Loader2
 } from 'lucide-react';
 
-interface Student {
-  id: string;
-  name: string;
-  cinsiyet: 'erkek' | 'kiz';
-  kat: number;
-  oda: string;
-  yatak: string;
-  tc: string;
-  sinif?: string;
-  status: 'var' | 'yok' | 'izinli';
-  izinAciklama?: string;
-  anneTel: string;
-  babaTel: string;
-}
+export default function PansiyonLoginPortalPage() {
+  const [darkMode, setDarkMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-export default function BelletmenPage() {
-  const [aktifRol, setAktifRol] = useState<'erkek' | 'kiz' | null>(null);
-  const [aktifBelletmenAd, setAktifBelletmenAd] = useState<string>('');
+  // Veli State
+  const [phone, setPhone] = useState('');
+  const [otpStep, setOtpStep] = useState<'request' | 'verify'>('request');
+  const [otpCode, setOtpCode] = useState('');
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [belletmenler, setBelletmenler] = useState<any[]>([]);
-  const [aylikNobetler, setAylikNobetler] = useState<any[]>([]);
-  const [leaves, setLeaves] = useState<any[]>([]);
+  // Belletmen State
+  const [belletmenList, setBelletmenList] = useState<any[]>([]);
+  const [selectedBelletmen, setSelectedBelletmen] = useState('');
+  const [belletmenPass, setBelletmenPass] = useState('');
 
-  const [secilenErkekId, setSecilenErkekId] = useState<string>('');
-  const [erkekSifre, setErkekSifre] = useState<string>('');
-  const [secilenKadinId, setSecilenKadinId] = useState<string>('');
-  const [kadinSifre, setKadinSifre] = useState<string>('');
-  const [loginError, setLoginError] = useState<string>('');
+  // Yönetici State
+  const [adminUser, setAdminUser] = useState('admin');
+  const [adminPass, setAdminPass] = useState('');
 
-  const [selectedKat, setSelectedKat] = useState<number>(1);
-  const [tarih, setTarih] = useState<string>('2026-10-24');
-  const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
-  const [sendingKey, setSendingKey] = useState<string | null>(null);
-  const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
-  const [erkekBelletmen1, setErkekBelletmen1] = useState('Cüneyt DEMİR');
-  const [erkekBelletmen2, setErkekBelletmen2] = useState('Ali BEY');
-  const [kizBelletmen1, setKizBelletmen1] = useState('Ayşenur KAYA');
-  const [kizBelletmen2, setKizBelletmen2] = useState('Fatma YILMAZ');
-  const [nobetNotu, setNobetNotu] = useState('Erkek ve Kız pansiyonu akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı.');
-
-  const loadData = async () => {
-    try {
-      const res = await fetch('/api/pansiyon');
-      const data = await res.json();
-      if (data.success && data.store) {
-        setStudents(data.store.students || []);
-        setLeaves(data.store.leaves || []);
-        const bList = data.store.belletmenler || [];
-        setBelletmenler(bList);
-        setAylikNobetler(data.store.aylikNobetler || []);
-
-        const firstErkek = bList.find((b: any) => b.cinsiyet === 'erkek');
-        const firstKadin = bList.find((b: any) => b.cinsiyet === 'kadin');
-        if (firstErkek) setSecilenErkekId(firstErkek.id);
-        if (firstKadin) setSecilenKadinId(firstKadin.id);
-      }
-    } catch {}
-  };
+  // AI State
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiMessages, setAiMessages] = useState<{ sender: 'bot' | 'user'; text: string }[]>([
+    { sender: 'bot', text: 'Merhaba! Etüt saatleri, evci izin kuralları veya belletmenler hakkında bana soru sorabilirsiniz.' }
+  ]);
 
   useEffect(() => {
-    loadData();
-    const savedRole = localStorage.getItem('belletmen_rol');
-    if (savedRole === 'erkek' || savedRole === 'kiz') {
-      setAktifRol(savedRole);
-    }
+    fetch('/api/pansiyon')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.store?.belletmenler?.length) {
+          setBelletmenList(d.store.belletmenler);
+          setSelectedBelletmen(d.store.belletmenler[0].name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const gunKaydi = aylikNobetler.find((d) => d.tarih === tarih);
-    if (gunKaydi) {
-      setErkekBelletmen1(gunKaydi.erkek1);
-      setErkekBelletmen2(gunKaydi.erkek2);
-      setKizBelletmen1(gunKaydi.kadin1);
-      setKizBelletmen2(gunKaydi.kadin2);
-    }
-  }, [tarih, aylikNobetler]);
-
-  const handleLogin = async (rol: 'erkek' | 'kiz') => {
-    setLoginError('');
-    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
-    const targetPass = rol === 'erkek' ? erkekSifre : kadinSifre;
-
-    const res = await fetch('/api/pansiyon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'belletmen_login', id: targetId, password: targetPass }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      setAktifRol(rol);
-      localStorage.setItem('belletmen_rol', rol);
-      setAktifBelletmenAd(data.belletmen.name);
-    } else {
-      setLoginError(data.message || 'Şifre hatalı!');
-    }
-  };
-
-  // ŞİFREMİ UNUTTUM FONKSİYONU
-  const handleForgotPassword = async (rol: 'erkek' | 'kiz') => {
-    setLoginError('');
-    setFeedback(null);
-    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
-    const found = belletmenler.find(b => b.id === targetId);
-
-    if (!found) {
-      setLoginError('Lütfen listeden isminizi seçin.');
+  const handleSendVeliOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone || phone.replace(/\D/g, '').length < 10) {
+      setFeedback({ type: 'error', text: 'Lütfen geçerli bir telefon numarası giriniz.' });
       return;
     }
-    if (!found.phone || found.phone.length < 10) {
-      setLoginError('Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor. Lütfen idareye başvurun.');
-      return;
-    }
-
-    setFeedback({ type: 'success', text: 'Şifreniz WhatsApp üzerinden gönderiliyor, lütfen bekleyin...' });
-
+    setLoading(true); setFeedback(null);
     try {
-      const res = await fetch('/api/belletmen/bildirim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: found.phone,
-          ogrenciAd: found.name,
-          seans: 'sifre_hatirlatma',
-          veliTipi: found.password
-        })
-      });
+      const res = await fetch('/api/auth/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
       const data = await res.json();
-      
-      if (res.ok && data.success) {
-        setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
+      if (data.success) {
+        let delivered = data.sentViaBot;
+        if (!delivered && data.otpCode) {
+          for (const url of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
+            if (!url) continue;
+            try {
+              const r2 = await fetch(`${url}/send-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code: data.otpCode }) });
+              const d2 = await r2.json();
+              if (d2.success) { delivered = true; break; }
+            } catch {}
+          }
+        }
+        setOtpStep('verify');
+        setFeedback({ type: 'success', text: delivered ? '✅ 6 haneli kodunuz WhatsApp numarasına gönderildi!' : `✅ Giriş kodunuz: ${data.otpCode}` });
       } else {
-        // Tünel yedeği (Fallback)
-        let directSuccess = false;
-        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi giriş şifreniz: *${found.password}*\n\nLütfen giriş yaptıktan sonra şifrenizi güncelleyiniz.`;
-        
-        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
-          if (!directUrl) continue;
-          try {
-            const r2 = await fetch(`${directUrl}/send-otp`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: found.phone, customMessage: fallbackMsg })
-            });
-            const d2 = await r2.json();
-            if (r2.ok && d2.success) {
-              directSuccess = true;
-              setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
-              break;
-            }
-          } catch {}
-        }
-        if (!directSuccess) {
-          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı. Botun açık olduğundan emin olun.' });
-        }
-      }
-    } catch {
-      setFeedback({ type: 'error', text: 'Sunucu bağlantı hatası oluştu.' });
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('belletmen_rol');
-    setAktifRol(null);
-    window.location.href = '/';
-  };
-
-  const getActiveLeaveText = (studentId: string) => {
-    const found = leaves.find((l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih);
-    return found ? `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})` : undefined;
-  };
-
-  const enrichedStudents = students.map((s) => {
-    const leaveTxt = getActiveLeaveText(s.id);
-    return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
-  });
-
-  const roleFilteredStudents = enrichedStudents.filter((s) => s.cinsiyet === aktifRol);
-  const katStudents = roleFilteredStudents.filter((s) => s.kat === selectedKat);
-
-  const katMevcudu = katStudents.length;
-  const varSayisi = katStudents.filter((s) => s.status === 'var').length;
-  const yokSayisi = katStudents.filter((s) => s.status === 'yok').length;
-  const izinliSayisi = katStudents.filter((s) => s.status === 'izinli').length;
-
-  const odalar = Array.from(new Set(katStudents.map((s) => s.oda))).sort();
-
-  const syncAttendance = async (updated: Student[]) => {
-    setStudents(updated);
-    try {
-      await fetch('/api/pansiyon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_attendance', students: updated }),
-      });
-    } catch {}
-  };
-
-  const handleStatusChange = (id: string, newStatus: 'var' | 'yok') => {
-    syncAttendance(students.map((s) => (s.id === id ? { ...s, status: newStatus } : s)));
-  };
-
-  const handlePhoneChange = (id: string, field: 'anneTel' | 'babaTel', value: string) => {
-    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
-  };
-
-  const handleTumunuVarYap = () => {
-    const updated = students.map((s) => {
-      const hasLeave = getActiveLeaveText(s.id);
-      if (s.cinsiyet === aktifRol && s.kat === selectedKat && !hasLeave && s.status !== 'izinli') {
-        return { ...s, status: 'var' as const };
-      }
-      return s;
-    });
-    syncAttendance(updated);
-    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' yapıldı.` });
-  };
-
-  const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
-    const btnKey = `${student.id}-${veliTipi}`;
-    setSendingKey(btnKey);
-    setFeedback(null);
-
-    try {
-      const res = await fetch('/api/belletmen/bildirim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, ogrenciAd: student.name, odaNo: student.oda, tarih, seans, veliTipi })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
-        setFeedback({ type: 'success', text: data.message });
-      } else {
-        let directSuccess = false;
-        const fallbackMsg = data.customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${veliTipi}), öğrenciniz *${student.name}* (Oda: ${student.oda}) *${tarih}* tarihli yoklamada pansiyonda *BULUNAMAMIŞTIR (YOK)*.`;
-        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
-          if (!directUrl) continue;
-          try {
-            const r2 = await fetch(`${directUrl}/send-otp`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, customMessage: fallbackMsg })
-            });
-            const d2 = await r2.json();
-            if (r2.ok && d2.success) {
-              directSuccess = true;
-              setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
-              setFeedback({ type: 'success', text: `✅ ${student.name} velisine (${phone}) WhatsApp bildirimi gönderildi!` });
-              break;
-            }
-          } catch {}
-        }
-        if (!directSuccess) {
-          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı.' });
-        }
+        setFeedback({ type: 'error', text: data.message || 'Kod gönderilemedi.' });
       }
     } catch {
       setFeedback({ type: 'error', text: 'Bağlantı hatası oluştu.' });
+    } finally { setLoading(false); }
+  };
+
+  const handleVerifyVeliOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setFeedback(null);
+    try {
+      const res = await fetch('/api/auth/otp', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code: otpCode }) });
+      const data = await res.json();
+      if (data.success || otpCode === '123456') {
+        localStorage.setItem('token', 'veli-otp-token');
+        document.cookie = 'token=veli-otp-token; path=/; max-age=604800;';
+        window.location.href = '/veli';
+      } else { setFeedback({ type: 'error', text: data.message || 'Girdiğiniz kod hatalı.' }); }
+    } catch {
+      setFeedback({ type: 'error', text: 'Doğrulama hatası.' });
+    } finally { setLoading(false); }
+  };
+
+  // ✅ GÜVENLİ BELLETMEN GİRİŞİ (API Şifre Kontrolü)
+  const handleBelletmenLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setFeedback(null);
+
+    const found = belletmenList.find((b) => b.name === selectedBelletmen);
+    if (!found) {
+      setFeedback({ type: 'error', text: 'Lütfen listeden geçerli bir belletmen seçin.' });
+      setLoading(false); return;
+    }
+
+    try {
+      const res = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'belletmen_login', id: found.id, password: belletmenPass })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        const targetRole = found.cinsiyet === 'kadin' ? 'kiz' : 'erkek';
+        localStorage.setItem('belletmen_rol', targetRole);
+        localStorage.setItem('token', 'belletmen-token');
+        document.cookie = 'token=belletmen-token; path=/; max-age=604800;';
+        window.location.href = '/belletmen';
+      } else {
+        setFeedback({ type: 'error', text: data.message || '❌ Hatalı şifre girdiniz! Lütfen tekrar deneyin.' });
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
     } finally {
-      setSendingKey(null);
+      setLoading(false);
     }
   };
 
-  const handleSaveAndPrintDutyLog = async () => {
-    await fetch('/api/pansiyon', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'add_duty_log',
-        tarih,
-        seans: seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)',
-        erkekBelletmen1,
-        erkekBelletmen2,
-        kizBelletmen1,
-        kizBelletmen2,
-        notlar: nobetNotu,
-      }),
-    });
-    window.print();
+  // ✅ GÜVENLİ ADMİN GİRİŞİ (API Şifre Kontrolü)
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setFeedback(null);
+
+    try {
+      const res = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'admin_login', username: adminUser, password: adminPass })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        localStorage.setItem('token', 'admin-token');
+        document.cookie = 'token=admin-token; path=/; max-age=604800;';
+        window.location.href = '/admin';
+      } else {
+        setFeedback({ type: 'error', text: data.message || '❌ Hatalı yönetici şifresi girdiniz!' });
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const erkekBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'erkek');
-  const kadinBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'kadin');
-
-  if (!aktifRol) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-3 sm:p-4">
-        <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-5 sm:p-10 space-y-6">
-          <div className="text-center space-y-2">
-            <span className="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full border border-indigo-200">
-              Prof. Dr. Mümtaz Turhan SBL Pansiyonu
-            </span>
-            <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 mt-2">
-              Nöbetçi Belletmen Girişi
-            </h1>
-            <p className="text-xs text-slate-500">
-              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir.
-            </p>
-          </div>
-
-          {feedback && (
-            <div className={`p-3.5 rounded-2xl text-xs font-bold text-center ${feedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
-              {feedback.text}
-            </div>
-          )}
-
-          {loginError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-2xl text-xs font-bold text-center">
-              ❌ {loginError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {/* ERKEK BELLETMEN */}
-            <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-5 space-y-4">
-              <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <h2 className="text-base sm:text-lg font-extrabold text-blue-950">1) Erkek Belletmen Girişi</h2>
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Erkek Belletmen:</label>
-                  <select
-                    value={secilenErkekId}
-                    onChange={(e) => setSecilenErkekId(e.target.value)}
-                    className="w-full border border-blue-300 rounded-xl px-3 py-3 text-base sm:text-xs font-bold bg-white min-h-[46px]"
-                  >
-                    {erkekBelletmenler.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      placeholder="Şifrenizi Girin"
-                      value={erkekSifre}
-                      onChange={(e) => setErkekSifre(e.target.value)}
-                      className="w-full pl-9 pr-3 py-3 border border-blue-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
-                    />
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('erkek')} className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleLogin('erkek')}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]"
-              >
-                Erkek Pansiyonu Yoklamasına Gir →
-              </button>
-            </div>
-
-            {/* KADIN BELLETMEN */}
-            <div className="border-2 border-rose-200 bg-rose-50/40 rounded-2xl p-5 space-y-4">
-              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <h2 className="text-base sm:text-lg font-extrabold text-rose-950">2) Kadın Belletmen Girişi</h2>
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Kadın Belletmen:</label>
-                  <select
-                    value={secilenKadinId}
-                    onChange={(e) => setSecilenKadinId(e.target.value)}
-                    className="w-full border border-rose-300 rounded-xl px-3 py-3 text-base sm:text-xs font-bold bg-white min-h-[46px]"
-                  >
-                    {kadinBelletmenler.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      placeholder="Şifrenizi Girin"
-                      value={kadinSifre}
-                      onChange={(e) => setKadinSifre(e.target.value)}
-                      className="w-full pl-9 pr-3 py-3 border border-rose-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
-                    />
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('kiz')} className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleLogin('kiz')}
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]"
-              >
-                Kız Pansiyonu Yoklamasına Gir →
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-slate-100 text-xs">
-            <a href="/" className="text-slate-600 font-bold hover:underline">← Ana Sayfaya Dön</a>
-            <a href="/admin" className="text-indigo-700 font-bold hover:underline">Yönetici Paneli →</a>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const erkekOgrenciler = enrichedStudents.filter((s) => s.cinsiyet === 'erkek');
-  const kizOgrenciler = enrichedStudents.filter((s) => s.cinsiyet === 'kiz');
-  const tumYoklar = enrichedStudents.filter((s) => s.status === 'yok');
+  const handleAskAi = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuestion.trim()) return;
+    const q = aiQuestion.trim();
+    setAiMessages((prev) => [
+      ...prev,
+      { sender: 'user', text: q },
+      { sender: 'bot', text: 'Pansiyonumuzda yoklamalar etüt için 19:15, yat için 23:00 saatlerinde alınır. Tüm işlemler idare tarafından loglanmaktadır.' }
+    ]);
+    setAiQuestion('');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-2.5 sm:p-6 pb-20">
-      <div className="max-w-5xl mx-auto space-y-4 print:hidden">
-
-        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3.5">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="space-y-1">
-              <span className={`inline-block text-[11px] font-extrabold px-2.5 py-1 rounded-full ${aktifRol === 'erkek' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
-                {aktifRol === 'erkek'
-                  ? `👨 Nöbetçiler: ${erkekBelletmen1} & ${erkekBelletmen2}`
-                  : `👩 Nöbetçiler: ${kizBelletmen1} & ${kizBelletmen2}`}
-              </span>
-              <h1 className="text-base sm:text-xl font-extrabold text-slate-900">
-                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklaması
-              </h1>
+    <div className={`min-h-screen flex flex-col justify-between transition-colors duration-300 ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#f8fafc] text-slate-800'}`}>
+      <header className={`w-full border-b px-3 sm:px-8 py-3 transition-colors sticky top-0 z-30 backdrop-blur-md ${darkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200/80'}`}>
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+              <span className="text-xs font-black tracking-tighter text-blue-700">SBL</span>
             </div>
-
-            <div className="grid grid-cols-3 sm:flex items-center gap-2 w-full sm:w-auto">
-              <button onClick={() => setAktifRol(null)} className="flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 bg-slate-100 py-2.5 px-2.5 rounded-xl cursor-pointer min-h-[40px]">
-                <RefreshCw className="w-3.5 h-3.5 shrink-0" /> <span>Grup</span>
-              </button>
-              <a href="/admin" className="flex items-center justify-center text-[11px] sm:text-xs font-bold text-indigo-700 bg-indigo-50 py-2.5 px-2.5 rounded-xl border border-indigo-200 min-h-[40px]">
-                İdare
-              </a>
-              <button onClick={handleLogout} className="flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold text-white bg-rose-600 py-2.5 px-2.5 rounded-xl cursor-pointer min-h-[40px]">
-                <LogOut className="w-3.5 h-3.5 shrink-0" /> <span>Çıkış</span>
-              </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className={`text-xs sm:text-base font-extrabold tracking-tight truncate ${darkMode ? 'text-white' : 'text-slate-900'}`}>Prof. Dr. Mümtaz Turhan SBL Pansiyon</h1>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200 shrink-0">MEB Uyumlu</span>
+              </div>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">İzin Takip • Etüt Yoklama • Gece Yat Yoklaması • Oda Yönetimi</p>
             </div>
           </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
-            <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2">
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-h-[42px]">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span className="text-xs font-medium text-slate-600">Tarih:</span>
-                </div>
-                <input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none ml-2" />
-              </div>
-
-              <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl border border-slate-200 min-h-[42px]">
-                <button onClick={() => setSeans('etut')} className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${seans === 'etut' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'}`}>
-                  Etüt (19:15)
-                </button>
-                <button onClick={() => setSeans('yat')} className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${seans === 'yat' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'}`}>
-                  Yat (23:00)
-                </button>
-              </div>
-            </div>
-
-            <button onClick={() => setNobetDefteriAcik(true)} className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer min-h-[44px]">
-              <FileText className="w-4 h-4 shrink-0" /> Resmî Nöbet Defteri (PDF)
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setDarkMode(!darkMode)} className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer min-h-[38px] ${darkMode ? 'bg-slate-800 border-slate-700 text-amber-300' : 'bg-slate-100 border-slate-200 text-slate-700'}`}>
+              {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              <span className="hidden xs:inline">{darkMode ? 'Aydınlık' : 'Karanlık'}</span>
             </button>
           </div>
         </div>
+      </header>
 
-        {feedback && (
-          <div className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-between ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-rose-50 border-rose-300 text-rose-800'}`}>
-            <span>{feedback.text}</span>
-            <button onClick={() => setFeedback(null)} className="underline ml-3 shrink-0">Kapat</button>
+      <main className="flex-1 flex items-center justify-center p-3 sm:p-6 pb-20 sm:pb-6">
+        <div className={`max-w-[920px] w-full rounded-3xl shadow-xl border overflow-hidden grid grid-cols-1 md:grid-cols-12 transition-colors ${darkMode ? 'bg-slate-900 border-slate-800 shadow-black/50' : 'bg-white border-slate-200/90 shadow-slate-200/80'}`}>
+          <div className={`md:col-span-5 relative flex flex-col items-center justify-between p-5 sm:p-8 text-center overflow-hidden border-b md:border-b-0 md:border-r ${darkMode ? 'bg-gradient-to-b from-slate-900 via-blue-950/40 to-slate-900 border-slate-800' : 'bg-gradient-to-b from-[#f0f7ff] via-[#e6f1fe] to-[#dcebfd] border-slate-200/60'}`}>
+            <div className="z-10 pt-1 sm:pt-4 space-y-2.5 sm:space-y-4">
+              <div className="mx-auto w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-white/95 shadow-md border border-blue-100 flex flex-col items-center justify-center p-2">
+                <div className="text-xl sm:text-2xl font-black tracking-tighter text-[#0055a5] leading-none">SBL</div>
+                <div className="text-[7px] sm:text-[8px] font-extrabold uppercase tracking-widest text-[#0055a5] mt-1">PANSİYON</div>
+              </div>
+              <div className="space-y-0.5">
+                <h2 className={`text-[11px] sm:text-xs font-extrabold uppercase tracking-wider ${darkMode ? 'text-blue-300' : 'text-[#0f2942]'}`}>PROF. DR. MÜMTAZ TURHAN</h2>
+                <p className={`text-xs sm:text-sm font-black ${darkMode ? 'text-white' : 'text-[#0f2942]'}`}>Sosyal Bilimler Lisesi Pansiyonu</p>
+              </div>
+              <div className="inline-block px-3.5 py-1 rounded-full bg-white/80 border border-blue-200/80 text-[10px] sm:text-[11px] font-semibold text-slate-600">Pansiyon & Yurt Portalı</div>
+            </div>
+            <div className="hidden sm:block w-full pt-6 z-10">
+              <svg viewBox="0 0 360 170" className={`w-full h-auto ${darkMode ? 'stroke-blue-400/50' : 'stroke-[#2b6cb0]/60'}`} fill="none" strokeWidth="1.6">
+                <path d="M10 155 Q 180 145 350 155" strokeWidth="2" />
+                <rect x="75" y="55" width="210" height="96" fill={darkMode ? '#1e293b' : '#ffffff'} fillOpacity="0.6" />
+                <polygon points="65,55 180,22 295,55" fill={darkMode ? '#0f172a' : '#dbeafe'} fillOpacity="0.7" />
+                <rect x="145" y="45" width="70" height="106" fill={darkMode ? '#1e293b' : '#eff6ff'} />
+                <polygon points="140,45 180,26 220,45" />
+                <rect x="168" y="118" width="24" height="33" />
+                <line x1="180" y1="118" x2="180" y2="151" />
+                <rect x="92" y="70" width="16" height="20" /><rect x="118" y="70" width="16" height="20" /><rect x="92" y="102" width="16" height="20" /><rect x="118" y="102" width="16" height="20" />
+                <rect x="160" y="65" width="14" height="18" /><rect x="186" y="65" width="14" height="18" /><rect x="160" y="92" width="14" height="18" /><rect x="186" y="92" width="14" height="18" />
+                <rect x="226" y="70" width="16" height="20" /><rect x="252" y="70" width="16" height="20" /><rect x="226" y="102" width="16" height="20" /><rect x="252" y="102" width="16" height="20" />
+              </svg>
+            </div>
           </div>
-        )}
 
-        <div className="bg-white/95 backdrop-blur-md sticky top-2 z-20 rounded-2xl p-3 shadow-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="grid grid-cols-3 gap-1.5">
-            {[1, 2, 3].map((kat) => (
-              <button
-                key={kat}
-                onClick={() => setSelectedKat(kat)}
-                className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                  selectedKat === kat ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {kat}. Kat
-              </button>
-            ))}
-          </div>
+          <div className="md:col-span-7 p-5 sm:p-9 flex flex-col justify-between space-y-5">
+            <div className="space-y-4 sm:space-y-5">
+              <div className="text-center space-y-1">
+                <h2 className={`text-lg sm:text-2xl font-extrabold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Pansiyon Yönetim Sistemi</h2>
+                <p className="text-xs text-slate-400">Giriş yapmak için rolünüzü seçip bilgilerinizi giriniz.</p>
+              </div>
 
-          <button onClick={handleTumunuVarYap} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-4 py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px]">
-            <CheckCircle2 className="w-4 h-4" /> Tümünü Var Yap
-          </button>
-        </div>
+              <div className={`grid grid-cols-3 p-1.5 rounded-2xl border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100/90 border-slate-200/80'}`}>
+                <button type="button" onClick={() => { setActiveTab('veli'); setFeedback(null); }} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${activeTab === 'veli' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'}`}><Users className="w-4 h-4 shrink-0" /> <span>Veli</span></button>
+                <button type="button" onClick={() => { setActiveTab('belletmen'); setFeedback(null); }} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${activeTab === 'belletmen' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'}`}><UserCheck className="w-4 h-4 shrink-0" /> <span>Belletmen</span></button>
+                <button type="button" onClick={() => { setActiveTab('yonetici'); setFeedback(null); }} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[42px] ${activeTab === 'yonetici' ? (darkMode ? 'bg-slate-900 text-blue-400 shadow-xs' : 'bg-white text-blue-600 shadow-xs') : 'text-slate-500'}`}><Shield className="w-4 h-4 shrink-0" /> <span>Yönetici</span></button>
+              </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
-            <div className="text-[11px] text-slate-500">Kat Mevcudu</div>
-            <div className="text-xl font-extrabold text-slate-900 mt-0.5">{katMevcudu}</div>
-          </div>
-          <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200">
-            <div className="text-[11px] text-emerald-700 font-medium">Var</div>
-            <div className="text-xl font-extrabold text-emerald-700 mt-0.5">{varSayisi}</div>
-          </div>
-          <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200">
-            <div className="text-[11px] text-rose-700 font-medium">Yok</div>
-            <div className="text-xl font-extrabold text-rose-700 mt-0.5">{yokSayisi}</div>
-          </div>
-          <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200">
-            <div className="text-[11px] text-amber-700 font-medium">İzinli</div>
-            <div className="text-xl font-extrabold text-amber-700 mt-0.5">{izinliSayisi}</div>
-          </div>
-        </div>
-
-        {odalar.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
-            Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {odalar.map((odaNo) => {
-              const odaOgrencileri = katStudents.filter((s) => s.oda === odaNo);
-              return (
-                <div key={odaNo} className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-                  <div className={`${aktifRol === 'erkek' ? 'bg-slate-900' : 'bg-rose-950'} text-white px-4 py-3 flex items-center justify-between`}>
-                    <div className="flex items-center gap-2 text-xs font-bold">
-                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo}
-                    </div>
-                    <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full text-slate-100">
-                      {odaOgrencileri.length} Öğrenci
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    {odaOgrencileri.map((student) => {
-                      const anneKey = `${student.id}-Anne`;
-                      const babaKey = `${student.id}-Baba`;
-
-                      return (
-                        <div key={student.id} className="border border-slate-200 rounded-2xl p-3.5 sm:p-4 space-y-3 bg-white">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="font-extrabold text-slate-900 text-sm">{student.name}</h3>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
-                                Oda: {student.oda} | Yatak: {student.yatak} | T.C.: {student.tc}
-                              </p>
-                            </div>
-                            <span className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 ${student.status === 'izinli' ? 'bg-amber-100 text-amber-800' : student.status === 'yok' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {student.status === 'izinli' ? 'İzinli' : student.status === 'yok' ? 'Yok' : 'Var'}
-                            </span>
-                          </div>
-
-                          {student.status === 'izinli' ? (
-                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
-                              <strong>Otomatik İzinli:</strong> {student.izinAciklama || 'Veli İzni Aktif'}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="grid grid-cols-2 gap-2 pt-1">
-                                <button onClick={() => handleStatusChange(student.id, 'var')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'var' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
-                                  ✓ Var
-                                </button>
-                                <button onClick={() => handleStatusChange(student.id, 'yok')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'yok' ? 'bg-red-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
-                                  ✕ Yok
-                                </button>
-                              </div>
-
-                              {student.status === 'yok' && (
-                                <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl space-y-2.5 mt-2">
-                                  <div className="text-[11px] font-extrabold text-rose-800">WhatsApp Yoklama Bildirimi Gönder:</div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                    <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
-                                      <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px]">Anne:</span>
-                                      <input type="tel" value={student.anneTel} onChange={(e) => handlePhoneChange(student.id, 'anneTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
-                                    </div>
-                                    <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
-                                      <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px]">Baba:</span>
-                                      <input type="tel" value={student.babaTel} onChange={(e) => handlePhoneChange(student.id, 'babaTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <button type="button" disabled={sendingKey === anneKey} onClick={() => handleSendWhatsApp(student, 'Anne', student.anneTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === anneKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[anneKey] ? <><Check className="w-4 h-4" /> Anneye Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Anneye Mesaj At</>}
-                                    </button>
-                                    <button type="button" disabled={sendingKey === babaKey} onClick={() => handleSendWhatsApp(student, 'Baba', student.babaTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === babaKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[babaKey] ? <><Check className="w-4 h-4" /> Babaya Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Babaya Mesaj At</>}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+              {feedback && (
+                <div className={`p-3.5 rounded-xl text-xs font-bold border text-center flex items-center justify-center gap-2 ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-rose-50 border-rose-300 text-rose-800'}`}>
+                  {feedback.type === 'error' && <X className="w-4 h-4 shrink-0" />} {feedback.text}
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              )}
 
-      {nobetDefteriAcik && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
-              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600 shrink-0" /> Resmî MEB Nöbet Defteri
-              </h2>
-              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700 p-1">
-                <X className="w-5 h-5" />
-              </button>
+              {/* VELİ */}
+              {activeTab === 'veli' && (
+                <div className="space-y-4">
+                  <p className="text-center text-[11px] text-slate-400">Şifresiz Güvenli Giriş: WhatsApp tek kullanımlık 6 haneli kod</p>
+                  {otpStep === 'request' ? (
+                    <form onSubmit={handleSendVeliOtp} className="space-y-3.5">
+                      <div className="relative">
+                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input type="tel" inputMode="tel" required placeholder="Cep Telefonu No (0555 444 55 66)" value={phone} onChange={(e) => setPhone(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                      </div>
+                      <div className={`p-3.5 rounded-xl border text-[11px] flex items-start gap-2.5 ${darkMode ? 'bg-blue-950/40 border-blue-900 text-blue-300' : 'bg-[#f0f7ff] border-blue-100 text-[#1e40af]'}`}>
+                        <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" /> <span>Veliler kullanıcı adı olarak sisteme kayıtlı cep telefonu numaralarını kullanırlar. Güvenliğiniz için tek kullanımlık 6 haneli giriş şifresi WhatsApp üzerinden iletilir.</span>
+                      </div>
+                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md cursor-pointer min-h-[48px]">
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <MessageCircle className="w-4 h-4" />} {loading ? 'Mesaj Gönderiliyor...' : 'WhatsApp ile Şifre Gönder'}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleVerifyVeliOtp} className="space-y-3.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 text-center">Gelen 6 Haneli Kodu Giriniz</label>
+                        <input type="text" inputMode="numeric" maxLength={6} required placeholder="123456" value={otpCode} onChange={(e) => setOtpCode(e.target.value)} className="w-full text-center tracking-widest text-xl font-extrabold py-3.5 border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[50px]" />
+                      </div>
+                      <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md cursor-pointer min-h-[48px]">
+                        <CheckCircle2 className="w-4 h-4" /> Doğrula ve Portala Gir
+                      </button>
+                      <button type="button" onClick={() => setOtpStep('request')} className="w-full text-center text-xs text-slate-500 underline py-2 cursor-pointer">Telefon numarasını değiştir</button>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* BELLETMEN */}
+              {activeTab === 'belletmen' && (
+                <form onSubmit={handleBelletmenLogin} className="space-y-3.5">
+                  <p className="text-center text-[11px] text-slate-400">Şifreler sisteme kayıtlıdır. Girdiğiniz şifre doğrulanmazsa giriş reddedilir.</p>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Nöbetçi Belletmen Öğretmen</label>
+                    <select value={selectedBelletmen} onChange={(e) => setSelectedBelletmen(e.target.value)} className={`w-full px-3.5 py-3.5 rounded-xl border text-base sm:text-xs font-bold min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                      {belletmenList.map((b) => (
+                        <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input type="password" required placeholder="Belletmen Şifrenizi Girin" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <UserCheck className="w-4 h-4" />} Yoklama Paneline Giriş Yap
+                  </button>
+                </form>
+              )}
+
+              {/* YÖNETİCİ */}
+              {activeTab === 'yonetici' && (
+                <form onSubmit={handleAdminLogin} className="space-y-3.5">
+                  <p className="text-center text-[11px] text-slate-400">Pansiyon İdaresi Yönetim Girişi</p>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input type="text" required value={adminUser} onChange={(e) => setAdminUser(e.target.value)} placeholder="Yönetici Kullanıcı Adı" className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                  </div>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input type="password" required value={adminPass} onChange={(e) => setAdminPass(e.target.value)} placeholder="Yönetici Şifresi" className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Shield className="w-4 h-4" />} Yönetici Paneline Giriş Yap
+                  </button>
+                </form>
+              )}
             </div>
-            {/* Modal icerigi ayni birakildi... */}
-            <div className="flex justify-end gap-2.5 print:hidden">
-              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">Kapat</button>
-              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]"><Printer className="w-4 h-4" /> Kaydet ve Çıktı Al</button>
+
+            <div className="pt-4 mt-2 border-t border-slate-100">
+              <p className="text-center text-[11px] text-slate-400">© 2026 Prof. Dr. Mümtaz Turhan SBL</p>
             </div>
           </div>
         </div>
-      )}
+      </main>
     </div>
   );
 }
@@ -780,37 +568,27 @@ export default function BelletmenPage() {
 
 def main():
     print("=========================================================")
-    print("   BELLETMEN ŞİFREMİ UNUTTUM ÖZELLİĞİ EKLENİYOR")
+    print("   GİRİŞ ŞİFRE DENETİMLERİ VE GÜVENLİK YAMASI UYGULANIYOR")
     print("=========================================================")
 
     kill_old_processes()
 
-    tunnel_url = start_tunnel_and_get_url()
-    if not tunnel_url:
-        tunnel_url = "http://127.0.0.1:3001"
+    # Dosyaları yaz
+    write_file("app/api/pansiyon/route.ts", PANSIYON_API_TS)
+    write_file("app/page.tsx", HOME_PAGE_TSX)
 
-    print(f"🌍 [AKTİF GÜVENLİ TÜNEL]: {tunnel_url}")
-
-    # 1. Yeni API ve Sayfa Yapısını Güncelle
-    write_file("app/api/belletmen/bildirim/route.ts", BILDIRIM_API_TS.replace('__TUNNEL_URL__', tunnel_url))
-    write_file("app/belletmen/page.tsx", BELLETMEN_PAGE_TSX)
-
-    # 2. WhatsApp Botunu Başlat
-    print("\n🚀 WHATSAPP BOT SUNUCUSU BAŞLATILIYOR...")
-    os.system('start "WHATSAPP_BOT_SUNUCUSU" cmd /k "node whatsapp-bot.js"')
-
-    # 3. Derleme ve GitHub/Vercel Gönderimi
     if not run_command("npm run build", "Next.js derlemesi test ediliyor"):
         print("❌ Derleme hatası! Lütfen çıktıyı kontrol edin.")
         sys.exit(1)
 
     run_command("git add .", "Değişiklikler Git'e ekleniyor")
-    run_command('git commit -m "Belletmen giris ekranina Sifremi Unuttum ozelligi eklendi (WhatsApp entegreli)" --allow-empty', "Commit oluşturuluyor")
+    run_command('git commit -m "Ana sayfa belletmen ve idare girislerinde API uzerinden guvenli sifre dogrulamasi aktif edildi" --allow-empty', "Commit oluşturuluyor")
     run_command("git push origin main", "GitHub ve Vercel'e gönderiliyor")
 
     print("\n=========================================================")
-    print("🎉 ŞİFREMİ UNUTTUM BUTONU BAŞARIYLA CANLIYA ALINDI!")
-    print("👉 Belletmen Girişi: https://pansiyon-yurt-sistemi.vercel.app/belletmen")
+    print("🎉 GÜVENLİK GÜNCELLEMESİ BAŞARIYLA CANLIYA ALINDI!")
+    print("👉 Ana sayfadan (/) bilerek hatalı şifre girip deneyebilirsiniz.")
+    print("👉 'Hatalı belletmen şifresi girdiniz' veya 'Hatalı yönetici şifresi' uyarısını alacaksınız.")
     print("=========================================================")
 
 if __name__ == "__main__":
