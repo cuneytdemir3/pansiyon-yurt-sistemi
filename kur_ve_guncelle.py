@@ -58,45 +58,136 @@ def run_command(command, description):
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"[UYARI / HATA] {description}:")
-        if result.stdout: print(result.stdout)
-        if result.stderr: print(result.stderr)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
         return False
     else:
         print(f"[BAŞARILI] {description} tamamlandı.")
         return True
 
 # -------------------------------------------------------------------------
-# 1. API ROTASI (Şifre Denetimleri ve Admin Doğrulaması Eklendi)
+# 1. BİLDİRİM VE ŞİFRE HATIRLATMA API ROTASI (app/api/belletmen/bildirim/route.ts)
+# -------------------------------------------------------------------------
+BILDIRIM_API_TS = """import { NextResponse } from 'next/server';
+
+const BOT_URLS = ['__TUNNEL_URL__', 'http://127.0.0.1:3001', 'http://localhost:3001'];
+
+export async function POST(request: Request) {
+  try {
+    const { phone, ogrenciAd, odaNo, tarih, seans, veliTipi } = await request.json();
+    if (!phone) {
+      return NextResponse.json({ success: false, message: 'Sistemde kayıtlı telefon numarası bulunamadı.' }, { status: 400 });
+    }
+
+    let customMessage = '';
+    if (seans === 'izin_onay') {
+      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz,\\nÖğrenciniz *${ogrenciAd}* (Oda: ${odaNo}) için *${tarih}* tarihli izin talebiniz (*${veliTipi}*) onaylanmış ve nöbetçi belletmen yoklama sistemine *Otomatik İzinli* olarak işlenmiştir.`;
+    } else if (seans === 'sifre_hatirlatma') {
+      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın *${ogrenciAd}*,\\n\\nNöbetçi Belletmen Sistemi kayıtlı giriş şifreniz: *${veliTipi}*\\n\\nBu mesaj şifre hatırlatma talebiniz üzerine otomatik gönderilmiştir.`;
+    } else {
+      const seansMetni = seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)';
+      customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\\n\\nSayın Velimiz (${veliTipi || 'Veli'}),\\nÖğrenciniz *${ogrenciAd}* (Oda: ${odaNo}), *${tarih}* tarihli *${seansMetni}* yoklamasında pansiyonda *BULUNAMAMIŞTIR (YOK)*.\\n\\nLütfen acilen nöbetçi belletmen öğretmen ile iletişime geçiniz.`;
+    }
+
+    let lastError = 'WhatsApp Botuna ulaşılamadı.';
+    for (const botUrl of BOT_URLS) {
+      if (!botUrl) continue;
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 8000);
+
+        const res = await fetch(`${botUrl}/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, customMessage }),
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          return NextResponse.json({
+            success: true,
+            message: `✅ WhatsApp mesajı (${phone}) numarasına başarıyla gönderildi!`
+          });
+        } else {
+          lastError = data.message || lastError;
+        }
+      } catch (e) {}
+    }
+
+    return NextResponse.json({
+      success: false,
+      message: lastError,
+      customMessage,
+      tunnelUrl: '__TUNNEL_URL__'
+    }, { status: 200 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  }
+}
+"""
+
+# -------------------------------------------------------------------------
+# 2. MERKEZİ PANSİYON API ROTASI (Belletmen Telefon Numaraları ve Log Desteği)
 # -------------------------------------------------------------------------
 PANSIYON_API_TS = r'''import { NextResponse } from 'next/server';
 
 export interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; tc: string; sinif: string; kat: number; oda: string; yatak: string; anneTel: string; babaTel: string; status: string; }
 export interface BelletmenRecord { id: string; name: string; cinsiyet: 'erkek' | 'kadin'; brans: string; phone: string; password: string; }
 export interface MonthlyDutyDay { tarih: string; erkek1: string; erkek2: string; kadin1: string; kadin2: string; }
+export interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
+export interface DutyLogRecord { id: string; tarih: string; seans: string; erkekBelletmen1: string; erkekBelletmen2: string; kizBelletmen1: string; kizBelletmen2: string; notlar: string; }
 export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
 
 declare global {
-  var __pansiyonStoreV10: {
+  var __pansiyonStoreV11: {
     students: StudentRecord[];
     belletmenler: BelletmenRecord[];
     aylikNobetler: MonthlyDutyDay[];
+    leaves: LeaveRecord[];
+    dutyLogs: DutyLogRecord[];
     auditLogs: AuditLogRecord[];
   } | undefined;
 }
 
-if (!globalThis.__pansiyonStoreV10) {
-  globalThis.__pansiyonStoreV10 = {
+if (!globalThis.__pansiyonStoreV11) {
+  globalThis.__pansiyonStoreV11 = {
     students: [
       { id: '1', name: 'Ahmet Yılmaz', cinsiyet: 'erkek', tc: '12345678901', sinif: '10-A', kat: 1, oda: '101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '2', name: 'Mehmet Demir', cinsiyet: 'erkek', tc: '12345678902', sinif: '11-B', kat: 1, oda: '101', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '3', name: 'Canberk Öztürk', cinsiyet: 'erkek', tc: '12345678905', sinif: '9-A', kat: 1, oda: '102', yatak: 'A', anneTel: '05416571469', babaTel: '05556667788', status: 'yok' },
+      { id: '4', name: 'Burak Kaya', cinsiyet: 'erkek', tc: '12345678908', sinif: '10-C', kat: 2, oda: '201', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
       { id: '5', name: 'Zeynep Aydın', cinsiyet: 'kiz', tc: '12345678912', sinif: '10-A', kat: 1, oda: 'K-101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
+      { id: '6', name: 'Elif Yılmaz', cinsiyet: 'kiz', tc: '12345678913', sinif: '11-A', kat: 1, oda: 'K-101', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
+      { id: '7', name: 'Selin Şahin', cinsiyet: 'kiz', tc: '12345678914', sinif: '9-B', kat: 2, oda: 'K-201', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'yok' },
+      { id: '8', name: 'Merve Çelik', cinsiyet: 'kiz', tc: '12345678915', sinif: '12-B', kat: 2, oda: 'K-201', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'var' },
     ],
     belletmenler: [
       { id: 'b1', name: 'Cüneyt DEMİR', cinsiyet: 'erkek', brans: 'Bilişim Teknolojileri', phone: '05416571469', password: '1234' },
-      { id: 'b5', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat', phone: '05410000004', password: '1234' },
+      { id: 'b2', name: 'Ali BEY', cinsiyet: 'erkek', brans: 'Matematik', phone: '05416571469', password: '1234' },
+      { id: 'b3', name: 'Furkan DEMİR', cinsiyet: 'erkek', brans: 'Tarih', phone: '05416571469', password: '1234' },
+      { id: 'b4', name: 'Hasan ÇELİK', cinsiyet: 'erkek', brans: 'Fizik', phone: '05416571469', password: '1234' },
+      { id: 'b5', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat', phone: '05416571469', password: '1234' },
+      { id: 'b6', name: 'Fatma YILMAZ', cinsiyet: 'kadin', brans: 'İngilizce', phone: '05416571469', password: '1234' },
+      { id: 'b7', name: 'Zeynep ŞAHİN', cinsiyet: 'kadin', brans: 'Kimya', phone: '05416571469', password: '1234' },
+      { id: 'b8', name: 'Merve AYDIN', cinsiyet: 'kadin', brans: 'Biyoloji', phone: '05416571469', password: '1234' },
     ],
-    aylikNobetler: [],
+    aylikNobetler: [
+      { tarih: '2026-10-24', erkek1: 'Cüneyt DEMİR', erkek2: 'Ali BEY', kadin1: 'Ayşenur KAYA', kadin2: 'Fatma YILMAZ' },
+      { tarih: '2026-10-25', erkek1: 'Furkan DEMİR', erkek2: 'Hasan ÇELİK', kadin1: 'Zeynep ŞAHİN', kadin2: 'Merve AYDIN' },
+      { tarih: '2026-10-26', erkek1: 'Cüneyt DEMİR', erkek2: 'Furkan DEMİR', kadin1: 'Ayşenur KAYA', kadin2: 'Zeynep ŞAHİN' },
+    ],
+    leaves: [
+      { id: '101', studentId: '1', studentName: 'Ahmet Yılmaz', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-21', bitis: '2026-10-30', aciklama: 'Akraba ziyareti', veliTel: '05416571469', createdAt: '2026-10-21' },
+      { id: '102', studentId: '2', studentName: 'Mehmet Demir', oda: '101', tip: 'Ev İzni', baslangic: '2026-10-20', bitis: '2026-10-25', aciklama: 'Aile ziyareti ve hafta sonu ev izni', veliTel: '05416571469', createdAt: '2026-10-20' },
+      { id: '103', studentId: '6', studentName: 'Elif Yılmaz', oda: 'K-101', tip: 'Ev İzni', baslangic: '2026-10-23', bitis: '2026-10-26', aciklama: 'Hafta sonu evci izni', veliTel: '05416571469', createdAt: '2026-10-23' },
+    ],
+    dutyLogs: [],
     auditLogs: [
-      { id: 'log1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Güvenlik Güncellemesi', detay: 'Şifre doğrulama altyapısı aktif edildi.', tur: 'bilgi' }
+      { id: 'log1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Sistem Başlatıldı', detay: 'Şifre doğrulama ve WhatsApp şifre hatırlatma servisi aktif.', tur: 'bilgi' }
     ],
   };
 }
@@ -111,24 +202,31 @@ const addLog = (store: any, kullanici: string, islem: string, detay: string, tur
 };
 
 export async function GET() {
-  return NextResponse.json({ success: true, store: globalThis.__pansiyonStoreV10 });
+  return NextResponse.json({ success: true, store: globalThis.__pansiyonStoreV11 });
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action } = body;
-    const store = globalThis.__pansiyonStoreV10!;
+    const store = globalThis.__pansiyonStoreV11!;
 
-    // === GÜVENLİK & GİRİŞ DOĞRULAMALARI ===
     if (action === 'belletmen_login') {
-      const found = store.belletmenler.find((b) => b.id === body.id);
+      const found = store.belletmenler.find((b) => b.id === body.id || b.name === body.name);
       if (!found || found.password !== String(body.password || '').trim()) {
-        addLog(store, found ? found.name : 'Bilinmeyen', 'Hatalı Belletmen Girişi', 'Belletmen şifresi hatalı girildi.', 'hata');
-        return NextResponse.json({ success: false, message: 'Hatalı belletmen şifresi girdiniz!' }, { status: 401 });
+        addLog(store, found ? found.name : 'Bilinmeyen', 'Hatalı Belletmen Girişi', 'Belletmen şifresi yanlış girildi.', 'hata');
+        return NextResponse.json({ success: false, message: 'Hatalı belletmen şifresi girdiniz! Sadece kayıtlı şifrenizle giriş yapabilirsiniz.' }, { status: 401 });
       }
-      addLog(store, found.name, 'Belletmen Girişi', 'Pansiyon yoklama ekranına giriş yapıldı.', 'basari');
+      addLog(store, found.name, 'Belletmen Girişi', `${found.cinsiyet === 'kadin' ? 'Kız' : 'Erkek'} Pansiyonu yoklama ekranına giriş yapıldı.`, 'basari');
       return NextResponse.json({ success: true, belletmen: found, store });
+    }
+
+    if (action === 'log_forgot_password') {
+      const found = store.belletmenler.find((b) => b.id === body.id || b.name === body.name);
+      if (found) {
+        addLog(store, found.name, 'Şifre Hatırlatma Talebi', `Kayıtlı şifre WhatsApp (${found.phone}) üzerinden gönderildi.`, 'uyari');
+      }
+      return NextResponse.json({ success: true });
     }
 
     if (action === 'admin_login') {
@@ -136,13 +234,12 @@ export async function POST(request: Request) {
         addLog(store, 'Yönetici (Admin)', 'Yönetim Paneli Girişi', 'Sisteme yetkili idareci girişi yapıldı.', 'basari');
         return NextResponse.json({ success: true, message: 'Giriş başarılı.', store });
       }
-      addLog(store, 'Bilinmeyen (Admin Denemesi)', 'Hatalı Yönetici Girişi', 'Yönetici şifresi veya adı hatalı girildi.', 'hata');
+      addLog(store, 'Bilinmeyen (Admin)', 'Hatalı Yönetici Girişi', 'Yönetici şifresi hatalı girildi.', 'hata');
       return NextResponse.json({ success: false, message: 'Hatalı yönetici kullanıcı adı veya şifresi!' }, { status: 401 });
     }
 
-    // --- DİĞER İŞLEMLER ---
     if (action === 'add_belletmen') {
-      store.belletmenler.push({ id: Date.now().toString(), name: String(body.name).trim(), cinsiyet: body.cinsiyet === 'kadin' ? 'kadin' : 'erkek', brans: String(body.brans || 'Öğretmen').trim(), phone: String(body.phone || '05410000000').trim(), password: String(body.password || '1234').trim() });
+      store.belletmenler.push({ id: Date.now().toString(), name: String(body.name).trim(), cinsiyet: body.cinsiyet === 'kadin' ? 'kadin' : 'erkek', brans: String(body.brans || 'Öğretmen').trim(), phone: String(body.phone || '05416571469').trim(), password: String(body.password || '1234').trim() });
       addLog(store, 'Yönetici', 'Belletmen Eklendi', `${body.name} eklendi.`, 'basari');
       return NextResponse.json({ success: true, message: 'Belletmen eklendi.', store });
     }
@@ -151,7 +248,7 @@ export async function POST(request: Request) {
       if (Array.isArray(body.rows)) {
         for (const r of body.rows) {
           if (!r.name) continue;
-          store.belletmenler.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kadin' : 'erkek', brans: String(r.brans), phone: String(r.phone), password: String(r.password) });
+          store.belletmenler.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kadin' : 'erkek', brans: String(r.brans), phone: String(r.phone || '05416571469'), password: String(r.password || '1234') });
           added++;
         }
       }
@@ -161,8 +258,8 @@ export async function POST(request: Request) {
     if (action === 'update_belletmen_password') {
       const target = store.belletmenler.find((b) => b.id === body.id);
       if (target) {
-        target.password = String(body.newPassword);
-        addLog(store, 'Yönetici', 'Şifre Değişikliği', `${target.name} şifresi değişti.`, 'uyari');
+        target.password = String(body.newPassword).trim();
+        addLog(store, 'Yönetici', 'Şifre Değişikliği', `${target.name} şifresi güncellendi.`, 'uyari');
         return NextResponse.json({ success: true, message: 'Şifre güncellendi.', store });
       }
       return NextResponse.json({ success: false, message: 'Bulunamadı.' }, { status: 404 });
@@ -171,6 +268,14 @@ export async function POST(request: Request) {
       store.belletmenler = store.belletmenler.filter((b) => b.id !== body.id);
       addLog(store, 'Yönetici', 'Silme', `Belletmen silindi.`, 'uyari');
       return NextResponse.json({ success: true, message: 'Silindi.', store });
+    }
+    if (action === 'add_or_update_monthly_duty') {
+      const { tarih, erkek1, erkek2, kadin1, kadin2 } = body;
+      const idx = store.aylikNobetler.findIndex((d) => d.tarih === tarih);
+      const item: MonthlyDutyDay = { tarih, erkek1, erkek2, kadin1, kadin2 };
+      if (idx > -1) store.aylikNobetler[idx] = item;
+      else { store.aylikNobetler.push(item); store.aylikNobetler.sort((a, b) => a.tarih.localeCompare(b.tarih)); }
+      return NextResponse.json({ success: true, message: `${tarih} günü nöbetçileri kaydedildi.`, store });
     }
     if (action === 'auto_generate_month_duty') {
       const yearMonth = String(body.yearMonth);
@@ -207,8 +312,20 @@ export async function POST(request: Request) {
       store.aylikNobetler = store.aylikNobetler.filter((d) => d.tarih !== body.tarih);
       return NextResponse.json({ success: true, message: 'Nöbet silindi.', store });
     }
+    if (action === 'add_leave') {
+      const { studentId, tip, baslangic, bitis, aciklama, veliTel } = body;
+      const st = store.students.find((s) => s.id === studentId) || store.students[0];
+      store.leaves.unshift({ id: Date.now().toString(), studentId: st.id, studentName: st.name, oda: st.oda, tip: tip || 'Evci İzni', baslangic, bitis, aciklama: aciklama || 'Veli talebi', veliTel: veliTel || st.anneTel, createdAt: new Date().toISOString().split('T')[0] });
+      st.status = 'izinli';
+      addLog(store, `Veli (${veliTel || st.anneTel})`, 'Veli İzin Talebi', `${st.name} için izin onaylandı.`, 'basari');
+      return NextResponse.json({ success: true, message: 'İzin talebi onaylandı.', store });
+    }
+    if (action === 'update_attendance') {
+      if (Array.isArray(body.students)) store.students = body.students;
+      return NextResponse.json({ success: true, message: 'Yoklama güncellendi.', store });
+    }
     if (action === 'add_student') {
-      store.students.push({ id: Date.now().toString(), name: String(body.name), cinsiyet: body.cinsiyet === 'kiz' ? 'kiz' : 'erkek', tc: '10000000000', sinif: '9-A', kat: Number(body.kat || 1), oda: String(body.oda || '101'), yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'var' });
+      store.students.push({ id: Date.now().toString(), name: String(body.name), cinsiyet: body.cinsiyet === 'kiz' ? 'kiz' : 'erkek', tc: String(body.tc || '10000000000'), sinif: String(body.sinif || '9-A'), kat: Number(body.kat || 1), oda: String(body.oda || '101'), yatak: String(body.yatak || 'A'), anneTel: String(body.anneTel || '05416571469'), babaTel: String(body.babaTel || '05416571469'), status: 'var' });
       addLog(store, 'Yönetici', 'Öğrenci Eklendi', `${body.name} eklendi.`, 'basari');
       return NextResponse.json({ success: true, message: 'Öğrenci eklendi.', store });
     }
@@ -228,6 +345,16 @@ export async function POST(request: Request) {
       addLog(store, 'Yönetici', 'Öğrenci Silindi', `Öğrenci kaydı silindi.`, 'uyari');
       return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
     }
+    if (action === 'add_duty_log') {
+      const { tarih, seans, erkekBelletmen1, erkekBelletmen2, kizBelletmen1, kizBelletmen2, notlar } = body;
+      store.dutyLogs.unshift({ id: Date.now().toString(), tarih: String(tarih || ''), seans: String(seans || ''), erkekBelletmen1: String(erkekBelletmen1 || ''), erkekBelletmen2: String(erkekBelletmen2 || ''), kizBelletmen1: String(kizBelletmen1 || ''), kizBelletmen2: String(kizBelletmen2 || ''), notlar: String(notlar || '') });
+      addLog(store, 'Nöbetçi Belletmenler', 'Resmî Nöbet Tutanağı', `${tarih} (${seans}) nöbet defteri kaydedildi.`, 'basari');
+      return NextResponse.json({ success: true, message: 'Nöbet defteri kaydedildi.', store });
+    }
+    if (action === 'clear_audit_logs') {
+      store.auditLogs = [{ id: Date.now().toString(), tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Yönetici', islem: 'Günlük Temizlendi', detay: 'Denetim günlüğü yönetici tarafından sıfırlandı.', tur: 'uyari' }];
+      return NextResponse.json({ success: true, message: 'Denetim günlüğü temizlendi.', store });
+    }
 
     return NextResponse.json({ success: false, message: 'Bilinmeyen işlem.' }, { status: 400 });
   } catch (err: any) {
@@ -237,37 +364,34 @@ export async function POST(request: Request) {
 '''
 
 # -------------------------------------------------------------------------
-# 2. ANA SAYFA (Güvenli Şifre Kontrolleri Doğrudan API'ye Bağlandı)
+# 3. ANA SAYFA (Belletmen Sekmesine "Şifremi Unuttum" Butonu Eklendi)
 # -------------------------------------------------------------------------
 HOME_PAGE_TSX = r''''use client';
 
 import React, { useState, useEffect } from 'react';
 import {
   Users, UserCheck, Shield, Moon, Sun, User, ShieldAlert,
-  MessageCircle, Sparkles, Lock, CheckCircle2, X, Send, Loader2
+  MessageCircle, Sparkles, Lock, CheckCircle2, X, Send, Loader2, KeyRound
 } from 'lucide-react';
 
 export default function PansiyonLoginPortalPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
   const [loading, setLoading] = useState(false);
+  const [sendingForgot, setSendingForgot] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Veli State
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState<'request' | 'verify'>('request');
   const [otpCode, setOtpCode] = useState('');
 
-  // Belletmen State
   const [belletmenList, setBelletmenList] = useState<any[]>([]);
   const [selectedBelletmen, setSelectedBelletmen] = useState('');
   const [belletmenPass, setBelletmenPass] = useState('');
 
-  // Yönetici State
   const [adminUser, setAdminUser] = useState('admin');
   const [adminPass, setAdminPass] = useState('');
 
-  // AI State
   const [aiOpen, setAiOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiMessages, setAiMessages] = useState<{ sender: 'bot' | 'user'; text: string }[]>([
@@ -334,7 +458,7 @@ export default function PansiyonLoginPortalPage() {
     } finally { setLoading(false); }
   };
 
-  // ✅ GÜVENLİ BELLETMEN GİRİŞİ (API Şifre Kontrolü)
+  // BELLETMEN ŞİFRELİ GİRİŞ DOĞRULAMASI
   const handleBelletmenLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setFeedback(null);
@@ -360,7 +484,7 @@ export default function PansiyonLoginPortalPage() {
         document.cookie = 'token=belletmen-token; path=/; max-age=604800;';
         window.location.href = '/belletmen';
       } else {
-        setFeedback({ type: 'error', text: data.message || '❌ Hatalı şifre girdiniz! Lütfen tekrar deneyin.' });
+        setFeedback({ type: 'error', text: data.message || 'Hatalı şifre girdiniz!' });
       }
     } catch {
       setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
@@ -369,11 +493,80 @@ export default function PansiyonLoginPortalPage() {
     }
   };
 
-  // ✅ GÜVENLİ ADMİN GİRİŞİ (API Şifre Kontrolü)
+  // BELLETMEN ŞİFREMİ UNUTTUM (WHATSAPP İLE GÖNDER)
+  const handleBelletmenForgotPassword = async () => {
+    setFeedback(null);
+    const found = belletmenList.find((b) => b.name === selectedBelletmen);
+    if (!found) {
+      setFeedback({ type: 'error', text: 'Lütfen önce listeden adınızı seçin.' });
+      return;
+    }
+    if (!found.phone || found.phone.replace(/\D/g, '').length < 10) {
+      setFeedback({ type: 'error', text: 'Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor.' });
+      return;
+    }
+
+    setSendingForgot(true);
+    try {
+      await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log_forgot_password', id: found.id })
+      });
+
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: found.phone,
+          ogrenciAd: found.name,
+          seans: 'sifre_hatirlatma',
+          veliTipi: found.password
+        })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setFeedback({
+          type: 'success',
+          text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp üzerinden (${found.phone}) numaranıza gönderildi!`
+        });
+      } else {
+        let directSuccess = false;
+        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi kayıtlı giriş şifreniz: *${found.password}*`;
+        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
+          if (!directUrl) continue;
+          try {
+            const r2 = await fetch(`${directUrl}/send-otp`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: found.phone, customMessage: fallbackMsg })
+            });
+            const d2 = await r2.json();
+            if (r2.ok && d2.success) {
+              directSuccess = true;
+              setFeedback({
+                type: 'success',
+                text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp üzerinden (${found.phone}) numaranıza gönderildi!`
+              });
+              break;
+            }
+          } catch {}
+        }
+        if (!directSuccess) {
+          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı. Botun açık olduğundan emin olun.' });
+        }
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Şifre gönderilirken bağlantı hatası oluştu.' });
+    } finally {
+      setSendingForgot(false);
+    }
+  };
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setFeedback(null);
-
     try {
       const res = await fetch('/api/pansiyon', {
         method: 'POST',
@@ -381,13 +574,12 @@ export default function PansiyonLoginPortalPage() {
         body: JSON.stringify({ action: 'admin_login', username: adminUser, password: adminPass })
       });
       const data = await res.json();
-
       if (res.ok && data.success) {
         localStorage.setItem('token', 'admin-token');
         document.cookie = 'token=admin-token; path=/; max-age=604800;';
         window.location.href = '/admin';
       } else {
-        setFeedback({ type: 'error', text: data.message || '❌ Hatalı yönetici şifresi girdiniz!' });
+        setFeedback({ type: 'error', text: data.message || 'Hatalı yönetici şifresi girdiniz!' });
       }
     } catch {
       setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
@@ -403,7 +595,7 @@ export default function PansiyonLoginPortalPage() {
     setAiMessages((prev) => [
       ...prev,
       { sender: 'user', text: q },
-      { sender: 'bot', text: 'Pansiyonumuzda yoklamalar etüt için 19:15, yat için 23:00 saatlerinde alınır. Tüm işlemler idare tarafından loglanmaktadır.' }
+      { sender: 'bot', text: 'Pansiyonumuzda yoklamalar etüt için 19:15, yat için 23:00 saatlerinde alınır. Şifrenizi unuttuysanız Belletmen sekmesindeki Şifremi Unuttum butonuna tıklayarak WhatsApp üzerinden alabilirsiniz.' }
     ]);
     setAiQuestion('');
   };
@@ -496,7 +688,7 @@ export default function PansiyonLoginPortalPage() {
                         <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" /> <span>Veliler kullanıcı adı olarak sisteme kayıtlı cep telefonu numaralarını kullanırlar. Güvenliğiniz için tek kullanımlık 6 haneli giriş şifresi WhatsApp üzerinden iletilir.</span>
                       </div>
                       <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md cursor-pointer min-h-[48px]">
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <MessageCircle className="w-4 h-4" />} {loading ? 'Mesaj Gönderiliyor...' : 'WhatsApp ile Şifre Gönder'}
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <MessageCircle className="w-4 h-4" />} {loading ? 'Mesaj Gönderiliyor...' : 'WhatsApp ile 6 Haneli Şifre Gönder'}
                       </button>
                     </form>
                   ) : (
@@ -514,21 +706,34 @@ export default function PansiyonLoginPortalPage() {
                 </div>
               )}
 
-              {/* BELLETMEN */}
+              {/* BELLETMEN (ŞİFREMİ UNUTTUM BUTONU EKLENDİ) */}
               {activeTab === 'belletmen' && (
                 <form onSubmit={handleBelletmenLogin} className="space-y-3.5">
-                  <p className="text-center text-[11px] text-slate-400">Şifreler sisteme kayıtlıdır. Girdiğiniz şifre doğrulanmazsa giriş reddedilir.</p>
+                  <p className="text-center text-[11px] text-slate-400">Sadece sistemde kayıtlı şifreniz ile giriş yapabilirsiniz.</p>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">Nöbetçi Belletmen Öğretmen</label>
                     <select value={selectedBelletmen} onChange={(e) => setSelectedBelletmen(e.target.value)} className={`w-full px-3.5 py-3.5 rounded-xl border text-base sm:text-xs font-bold min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                       {belletmenList.map((b) => (
-                        <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name}</option>
+                        <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name} ({b.cinsiyet === 'kadin' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})</option>
                       ))}
                     </select>
                   </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input type="password" required placeholder="Belletmen Şifrenizi Girin" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input type="password" required placeholder="Belletmen Giriş Şifreniz" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={sendingForgot}
+                        onClick={handleBelletmenForgotPassword}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                      >
+                        {sendingForgot ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                        {sendingForgot ? 'WhatsApp ile Gönderiliyor...' : 'Şifremi Unuttum (WhatsApp Gönder)'}
+                      </button>
+                    </div>
                   </div>
                   <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <UserCheck className="w-4 h-4" />} Yoklama Paneline Giriş Yap
@@ -561,6 +766,36 @@ export default function PansiyonLoginPortalPage() {
           </div>
         </div>
       </main>
+
+      <footer className={`w-full border-t px-4 sm:px-10 py-3 text-[11px] text-slate-400 text-center sm:text-left transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/70'}`}>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-1.5">
+          <span>© 2026 Pansiyon ve Yurt Takip Sistemi • MEB Standartlarına Uygun</span>
+          <span className="hidden sm:inline">Güvenli Veritabanı • Rol Tabanlı Doğrulama</span>
+        </div>
+      </footer>
+
+      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-50">
+        {aiOpen && (
+          <div className="mb-3 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-extrabold"><Sparkles className="w-4 h-4" /> Yurt AI Asistanı</div>
+              <button onClick={() => setAiOpen(false)} className="text-white/80 hover:text-white p-1 cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-3 h-56 overflow-y-auto space-y-2 bg-slate-50 text-xs">
+              {aiMessages.map((m, idx) => (
+                <div key={idx} className={`p-2.5 rounded-xl max-w-[85%] ${m.sender === 'user' ? 'bg-indigo-600 text-white ml-auto' : 'bg-white border border-slate-200 text-slate-700'}`}>{m.text}</div>
+              ))}
+            </div>
+            <form onSubmit={handleAskAi} className="p-2 bg-white border-t border-slate-200 flex gap-1.5">
+              <input type="text" placeholder="Etüt saati, izin vb. sorun..." value={aiQuestion} onChange={(e) => setAiQuestion(e.target.value)} className="flex-1 text-base sm:text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none text-slate-800" />
+              <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer"><Send className="w-4 h-4" /></button>
+            </form>
+          </div>
+        )}
+        <button onClick={() => setAiOpen(!aiOpen)} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs px-4 py-3 rounded-full shadow-lg cursor-pointer">
+          <Sparkles className="w-4 h-4" /> Yurt AI Asistanı
+        </button>
+      </div>
     </div>
   );
 }
@@ -568,27 +803,39 @@ export default function PansiyonLoginPortalPage() {
 
 def main():
     print("=========================================================")
-    print("   GİRİŞ ŞİFRE DENETİMLERİ VE GÜVENLİK YAMASI UYGULANIYOR")
+    print("   BELLETMEN ŞİFREMİ UNUTTUM (WHATSAPP) AKTİF EDİLİYOR")
     print("=========================================================")
 
     kill_old_processes()
 
-    # Dosyaları yaz
+    tunnel_url = start_tunnel_and_get_url()
+    if not tunnel_url:
+        tunnel_url = "http://127.0.0.1:3001"
+
+    print(f"🌍 [AKTİF GÜVENLİ TÜNEL]: {tunnel_url}")
+
+    # 1. Dosyaları Güncelle
+    write_file("app/api/belletmen/bildirim/route.ts", BILDIRIM_API_TS.replace('__TUNNEL_URL__', tunnel_url))
     write_file("app/api/pansiyon/route.ts", PANSIYON_API_TS)
     write_file("app/page.tsx", HOME_PAGE_TSX)
 
+    # 2. WhatsApp Botunu Başlat
+    print("\n🚀 WHATSAPP BOT SUNUCUSU BAŞLATILIYOR...")
+    os.system('start "WHATSAPP_BOT_SUNUCUSU" cmd /k "node whatsapp-bot.js"')
+
+    # 3. Derleme ve GitHub/Vercel Gönderimi
     if not run_command("npm run build", "Next.js derlemesi test ediliyor"):
         print("❌ Derleme hatası! Lütfen çıktıyı kontrol edin.")
         sys.exit(1)
 
     run_command("git add .", "Değişiklikler Git'e ekleniyor")
-    run_command('git commit -m "Ana sayfa belletmen ve idare girislerinde API uzerinden guvenli sifre dogrulamasi aktif edildi" --allow-empty', "Commit oluşturuluyor")
+    run_command('git commit -m "Ana sayfa ve Belletmen girislerine WhatsApp uzerinden Sifremi Unuttum ozelligi eklendi" --allow-empty', "Commit oluşturuluyor")
     run_command("git push origin main", "GitHub ve Vercel'e gönderiliyor")
 
     print("\n=========================================================")
-    print("🎉 GÜVENLİK GÜNCELLEMESİ BAŞARIYLA CANLIYA ALINDI!")
-    print("👉 Ana sayfadan (/) bilerek hatalı şifre girip deneyebilirsiniz.")
-    print("👉 'Hatalı belletmen şifresi girdiniz' veya 'Hatalı yönetici şifresi' uyarısını alacaksınız.")
+    print("🎉 ŞİFREMİ UNUTTUM ÖZELLİĞİ BAŞARIYLA CANLIYA ALINDI!")
+    print("👉 Ana Sayfa: https://pansiyon-yurt-sistemi.vercel.app")
+    print("👉 Belletmen Girişi: https://pansiyon-yurt-sistemi.vercel.app/belletmen")
     print("=========================================================")
 
 if __name__ == "__main__":

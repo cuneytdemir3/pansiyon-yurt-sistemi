@@ -3,30 +3,27 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, UserCheck, Shield, Moon, Sun, User, ShieldAlert,
-  MessageCircle, Sparkles, Lock, CheckCircle2, X, Send, Loader2
+  MessageCircle, Sparkles, Lock, CheckCircle2, X, Send, Loader2, KeyRound
 } from 'lucide-react';
 
 export default function PansiyonLoginPortalPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
   const [loading, setLoading] = useState(false);
+  const [sendingForgot, setSendingForgot] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Veli State
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState<'request' | 'verify'>('request');
   const [otpCode, setOtpCode] = useState('');
 
-  // Belletmen State
   const [belletmenList, setBelletmenList] = useState<any[]>([]);
   const [selectedBelletmen, setSelectedBelletmen] = useState('');
   const [belletmenPass, setBelletmenPass] = useState('');
 
-  // Yönetici State
   const [adminUser, setAdminUser] = useState('admin');
   const [adminPass, setAdminPass] = useState('');
 
-  // AI State
   const [aiOpen, setAiOpen] = useState(false);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiMessages, setAiMessages] = useState<{ sender: 'bot' | 'user'; text: string }[]>([
@@ -93,7 +90,7 @@ export default function PansiyonLoginPortalPage() {
     } finally { setLoading(false); }
   };
 
-  // ✅ GÜVENLİ BELLETMEN GİRİŞİ (API Şifre Kontrolü)
+  // BELLETMEN ŞİFRELİ GİRİŞ DOĞRULAMASI
   const handleBelletmenLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setFeedback(null);
@@ -119,7 +116,7 @@ export default function PansiyonLoginPortalPage() {
         document.cookie = 'token=belletmen-token; path=/; max-age=604800;';
         window.location.href = '/belletmen';
       } else {
-        setFeedback({ type: 'error', text: data.message || '❌ Hatalı şifre girdiniz! Lütfen tekrar deneyin.' });
+        setFeedback({ type: 'error', text: data.message || 'Hatalı şifre girdiniz!' });
       }
     } catch {
       setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
@@ -128,11 +125,80 @@ export default function PansiyonLoginPortalPage() {
     }
   };
 
-  // ✅ GÜVENLİ ADMİN GİRİŞİ (API Şifre Kontrolü)
+  // BELLETMEN ŞİFREMİ UNUTTUM (WHATSAPP İLE GÖNDER)
+  const handleBelletmenForgotPassword = async () => {
+    setFeedback(null);
+    const found = belletmenList.find((b) => b.name === selectedBelletmen);
+    if (!found) {
+      setFeedback({ type: 'error', text: 'Lütfen önce listeden adınızı seçin.' });
+      return;
+    }
+    if (!found.phone || found.phone.replace(/\D/g, '').length < 10) {
+      setFeedback({ type: 'error', text: 'Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor.' });
+      return;
+    }
+
+    setSendingForgot(true);
+    try {
+      await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log_forgot_password', id: found.id })
+      });
+
+      const res = await fetch('/api/belletmen/bildirim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: found.phone,
+          ogrenciAd: found.name,
+          seans: 'sifre_hatirlatma',
+          veliTipi: found.password
+        })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setFeedback({
+          type: 'success',
+          text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp üzerinden (${found.phone}) numaranıza gönderildi!`
+        });
+      } else {
+        let directSuccess = false;
+        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi kayıtlı giriş şifreniz: *${found.password}*`;
+        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
+          if (!directUrl) continue;
+          try {
+            const r2 = await fetch(`${directUrl}/send-otp`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: found.phone, customMessage: fallbackMsg })
+            });
+            const d2 = await r2.json();
+            if (r2.ok && d2.success) {
+              directSuccess = true;
+              setFeedback({
+                type: 'success',
+                text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp üzerinden (${found.phone}) numaranıza gönderildi!`
+              });
+              break;
+            }
+          } catch {}
+        }
+        if (!directSuccess) {
+          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı. Botun açık olduğundan emin olun.' });
+        }
+      }
+    } catch {
+      setFeedback({ type: 'error', text: 'Şifre gönderilirken bağlantı hatası oluştu.' });
+    } finally {
+      setSendingForgot(false);
+    }
+  };
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setFeedback(null);
-
     try {
       const res = await fetch('/api/pansiyon', {
         method: 'POST',
@@ -140,13 +206,12 @@ export default function PansiyonLoginPortalPage() {
         body: JSON.stringify({ action: 'admin_login', username: adminUser, password: adminPass })
       });
       const data = await res.json();
-
       if (res.ok && data.success) {
         localStorage.setItem('token', 'admin-token');
         document.cookie = 'token=admin-token; path=/; max-age=604800;';
         window.location.href = '/admin';
       } else {
-        setFeedback({ type: 'error', text: data.message || '❌ Hatalı yönetici şifresi girdiniz!' });
+        setFeedback({ type: 'error', text: data.message || 'Hatalı yönetici şifresi girdiniz!' });
       }
     } catch {
       setFeedback({ type: 'error', text: 'Sunucuya bağlanılamadı.' });
@@ -162,7 +227,7 @@ export default function PansiyonLoginPortalPage() {
     setAiMessages((prev) => [
       ...prev,
       { sender: 'user', text: q },
-      { sender: 'bot', text: 'Pansiyonumuzda yoklamalar etüt için 19:15, yat için 23:00 saatlerinde alınır. Tüm işlemler idare tarafından loglanmaktadır.' }
+      { sender: 'bot', text: 'Pansiyonumuzda yoklamalar etüt için 19:15, yat için 23:00 saatlerinde alınır. Şifrenizi unuttuysanız Belletmen sekmesindeki Şifremi Unuttum butonuna tıklayarak WhatsApp üzerinden alabilirsiniz.' }
     ]);
     setAiQuestion('');
   };
@@ -255,7 +320,7 @@ export default function PansiyonLoginPortalPage() {
                         <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" /> <span>Veliler kullanıcı adı olarak sisteme kayıtlı cep telefonu numaralarını kullanırlar. Güvenliğiniz için tek kullanımlık 6 haneli giriş şifresi WhatsApp üzerinden iletilir.</span>
                       </div>
                       <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-[#059669] hover:bg-[#047857] text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs shadow-md cursor-pointer min-h-[48px]">
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <MessageCircle className="w-4 h-4" />} {loading ? 'Mesaj Gönderiliyor...' : 'WhatsApp ile Şifre Gönder'}
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <MessageCircle className="w-4 h-4" />} {loading ? 'Mesaj Gönderiliyor...' : 'WhatsApp ile 6 Haneli Şifre Gönder'}
                       </button>
                     </form>
                   ) : (
@@ -273,21 +338,34 @@ export default function PansiyonLoginPortalPage() {
                 </div>
               )}
 
-              {/* BELLETMEN */}
+              {/* BELLETMEN (ŞİFREMİ UNUTTUM BUTONU EKLENDİ) */}
               {activeTab === 'belletmen' && (
                 <form onSubmit={handleBelletmenLogin} className="space-y-3.5">
-                  <p className="text-center text-[11px] text-slate-400">Şifreler sisteme kayıtlıdır. Girdiğiniz şifre doğrulanmazsa giriş reddedilir.</p>
+                  <p className="text-center text-[11px] text-slate-400">Sadece sistemde kayıtlı şifreniz ile giriş yapabilirsiniz.</p>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">Nöbetçi Belletmen Öğretmen</label>
                     <select value={selectedBelletmen} onChange={(e) => setSelectedBelletmen(e.target.value)} className={`w-full px-3.5 py-3.5 rounded-xl border text-base sm:text-xs font-bold min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                       {belletmenList.map((b) => (
-                        <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name}</option>
+                        <option key={b.id} value={b.name}>{b.cinsiyet === 'kadin' ? '👩‍🏫 ' : '👨‍🏫 '} {b.name} ({b.cinsiyet === 'kadin' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})</option>
                       ))}
                     </select>
                   </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input type="password" required placeholder="Belletmen Şifrenizi Girin" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input type="password" required placeholder="Belletmen Giriş Şifreniz" value={belletmenPass} onChange={(e) => setBelletmenPass(e.target.value)} className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-base sm:text-xs min-h-[46px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={sendingForgot}
+                        onClick={handleBelletmenForgotPassword}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                      >
+                        {sendingForgot ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                        {sendingForgot ? 'WhatsApp ile Gönderiliyor...' : 'Şifremi Unuttum (WhatsApp Gönder)'}
+                      </button>
+                    </div>
                   </div>
                   <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <UserCheck className="w-4 h-4" />} Yoklama Paneline Giriş Yap
@@ -320,6 +398,36 @@ export default function PansiyonLoginPortalPage() {
           </div>
         </div>
       </main>
+
+      <footer className={`w-full border-t px-4 sm:px-10 py-3 text-[11px] text-slate-400 text-center sm:text-left transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/70'}`}>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-1.5">
+          <span>© 2026 Pansiyon ve Yurt Takip Sistemi • MEB Standartlarına Uygun</span>
+          <span className="hidden sm:inline">Güvenli Veritabanı • Rol Tabanlı Doğrulama</span>
+        </div>
+      </footer>
+
+      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-50">
+        {aiOpen && (
+          <div className="mb-3 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm bg-white rounded-2xl shadow-2xl border border-indigo-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-extrabold"><Sparkles className="w-4 h-4" /> Yurt AI Asistanı</div>
+              <button onClick={() => setAiOpen(false)} className="text-white/80 hover:text-white p-1 cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-3 h-56 overflow-y-auto space-y-2 bg-slate-50 text-xs">
+              {aiMessages.map((m, idx) => (
+                <div key={idx} className={`p-2.5 rounded-xl max-w-[85%] ${m.sender === 'user' ? 'bg-indigo-600 text-white ml-auto' : 'bg-white border border-slate-200 text-slate-700'}`}>{m.text}</div>
+              ))}
+            </div>
+            <form onSubmit={handleAskAi} className="p-2 bg-white border-t border-slate-200 flex gap-1.5">
+              <input type="text" placeholder="Etüt saati, izin vb. sorun..." value={aiQuestion} onChange={(e) => setAiQuestion(e.target.value)} className="flex-1 text-base sm:text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none text-slate-800" />
+              <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer"><Send className="w-4 h-4" /></button>
+            </form>
+          </div>
+        )}
+        <button onClick={() => setAiOpen(!aiOpen)} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs px-4 py-3 rounded-full shadow-lg cursor-pointer">
+          <Sparkles className="w-4 h-4" /> Yurt AI Asistanı
+        </button>
+      </div>
     </div>
   );
 }
