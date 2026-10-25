@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2,
-  Phone, Printer, X, LogOut, UserCheck, Lock, KeyRound, ShieldCheck
+  Phone, Printer, X, LogOut, UserCheck, Lock, KeyRound, ShieldCheck, RefreshCw
 } from 'lucide-react';
 
 interface Student {
@@ -12,13 +12,12 @@ interface Student {
   cinsiyet: 'erkek' | 'kiz';
   kat: number;
   oda: string;
-  yatak: string;
-  tc: string;
-  sinif?: string;
+  anneAdi?: string;
+  anneTel: string;
+  babaAdi?: string;
+  babaTel: string;
   status: 'var' | 'yok' | 'izinli';
   izinAciklama?: string;
-  anneTel: string;
-  babaTel: string;
 }
 
 export default function BelletmenPage() {
@@ -29,6 +28,7 @@ export default function BelletmenPage() {
   const [belletmenler, setBelletmenler] = useState<any[]>([]);
   const [aylikNobetler, setAylikNobetler] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
   const [secilenErkekId, setSecilenErkekId] = useState<string>('');
   const [erkekSifre, setErkekSifre] = useState<string>('');
@@ -36,7 +36,8 @@ export default function BelletmenPage() {
   const [kadinSifre, setKadinSifre] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
 
-  const [selectedKat, setSelectedKat] = useState<number>(1);
+  // 0 = Tüm Katlar, 1 = 1. Kat, 2 = 2. Kat, 3 = 3. Kat
+  const [selectedKat, setSelectedKat] = useState<number>(0);
   const [tarih, setTarih] = useState<string>('2026-10-25');
   const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
@@ -50,32 +51,53 @@ export default function BelletmenPage() {
   const [kizBelletmen2, setKizBelletmen2] = useState('Fatma YILMAZ');
   const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
 
-  // SADECE İLGİLİ CİNSİYETİN VERİSİNİ SUNUCUDAN ÇEK
-  const loadRoleSpecificData = async (rol: 'erkek' | 'kiz' | null) => {
+  // CANLI VERİ SENKRONİZASYONU (Cache-Busting + LocalStorage Köprüsü)
+  const loadRoleSpecificData = useCallback(async (rol: 'erkek' | 'kiz' | null) => {
     try {
-      const url = rol ? `/api/pansiyon?cinsiyet=${rol}` : '/api/pansiyon';
-      const res = await fetch(url);
+      const ts = Date.now();
+      const url = rol ? `/api/pansiyon?cinsiyet=${rol}&t=${ts}` : `/api/pansiyon?t=${ts}`;
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
+
       if (data.success && data.store) {
+        let serverStudents: Student[] = data.store.students || [];
+
+        // Aynı cihazda Admin panelinden yeni yüklenen liste varsa anında birleştir
+        try {
+          const localRaw = localStorage.getItem('pansiyon_shared_cache');
+          if (localRaw) {
+            const localStore = JSON.parse(localRaw);
+            if (Array.isArray(localStore.students) && localStore.students.length > serverStudents.length) {
+              const existingIds = new Set(serverStudents.map((s) => s.id));
+              for (const ls of localStore.students) {
+                if (!existingIds.has(ls.id)) {
+                  serverStudents.push(ls);
+                }
+              }
+            }
+          }
+        } catch {}
+
         if (rol) {
-          // Ekstra güvenlik: Sunucudan zaten filtrelenmiş gelir, istemcide de kesin filtre uygula
-          const strictStudents = (data.store.students || []).filter((s: Student) => s.cinsiyet === rol);
+          const strictStudents = serverStudents.filter((s: Student) => s.cinsiyet === rol);
           setStudents(strictStudents);
           setLeaves(data.store.leaves || []);
         } else {
           setStudents([]);
         }
+
         const bList = data.store.belletmenler || [];
         setBelletmenler(bList);
         setAylikNobetler(data.store.aylikNobetler || []);
+        setLastSyncTime(new Date().toLocaleTimeString('tr-TR'));
 
         const firstErkek = bList.find((b: any) => b.cinsiyet === 'erkek');
         const firstKadin = bList.find((b: any) => b.cinsiyet === 'kadin');
-        if (firstErkek && !secilenErkekId) setSecilenErkekId(firstErkek.id);
-        if (firstKadin && !secilenKadinId) setSecilenKadinId(firstKadin.id);
+        setSecilenErkekId((prev) => prev || (firstErkek ? firstErkek.id : ''));
+        setSecilenKadinId((prev) => prev || (firstKadin ? firstKadin.id : ''));
       }
     } catch {}
-  };
+  }, []);
 
   useEffect(() => {
     const savedRole = localStorage.getItem('belletmen_rol') as 'erkek' | 'kiz' | null;
@@ -87,7 +109,21 @@ export default function BelletmenPage() {
     } else {
       loadRoleSpecificData(null);
     }
-  }, []);
+  }, [loadRoleSpecificData]);
+
+  // HER 5 SANİYEDE BİR OTOMATİK CANLI GÜNCELLEME (Admin'den eklenen öğrenciler anında düşer)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadRoleSpecificData(aktifRol);
+    }, 5000);
+
+    const handleStorageEvent = () => loadRoleSpecificData(aktifRol);
+    window.addEventListener('storage', handleStorageEvent);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageEvent);
+    };
+  }, [aktifRol, loadRoleSpecificData]);
 
   useEffect(() => {
     const gunKaydi = aylikNobetler.find((d) => d.tarih === tarih);
@@ -112,7 +148,6 @@ export default function BelletmenPage() {
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      // Giriş yapan öğretmenin cinsiyeti ile seçtiği kutu uyumlu mu kontrol et
       const allowedRole: 'erkek' | 'kiz' = data.belletmen.cinsiyet === 'kadin' ? 'kiz' : 'erkek';
       setAktifRol(allowedRole);
       setAktifBelletmenAd(data.belletmen.name);
@@ -204,7 +239,6 @@ export default function BelletmenPage() {
     return found ? `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})` : undefined;
   };
 
-  // KESİN CİNSİYET FİLTRESİ: Erkek belletmen sadece 'erkek', Kadın belletmen sadece 'kiz' öğrencileri görebilir!
   const strictlyIsolatedStudents = students
     .filter((s) => s.cinsiyet === aktifRol)
     .map((s) => {
@@ -212,7 +246,10 @@ export default function BelletmenPage() {
       return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
     });
 
-  const katStudents = strictlyIsolatedStudents.filter((s) => s.kat === selectedKat);
+  // selectedKat === 0 ise TÜM KATLARI göster, değilse seçili katı göster
+  const katStudents = selectedKat === 0
+    ? strictlyIsolatedStudents
+    : strictlyIsolatedStudents.filter((s) => Number(s.kat) === selectedKat);
 
   const katMevcudu = katStudents.length;
   const varSayisi = katStudents.filter((s) => s.status === 'var').length;
@@ -243,13 +280,14 @@ export default function BelletmenPage() {
   const handleTumunuVarYap = () => {
     const updated = students.map((s) => {
       const hasLeave = getActiveLeaveText(s.id);
-      if (s.cinsiyet === aktifRol && s.kat === selectedKat && !hasLeave && s.status !== 'izinli') {
+      const katMatch = selectedKat === 0 || Number(s.kat) === selectedKat;
+      if (s.cinsiyet === aktifRol && katMatch && !hasLeave && s.status !== 'izinli') {
         return { ...s, status: 'var' as const };
       }
       return s;
     });
     syncAttendance(updated);
-    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm ${aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenciler 'Var' yapıldı.` });
+    setFeedback({ type: 'success', text: `✅ Gösterilen izinsiz tüm öğrenciler 'Var' olarak işaretlendi.` });
   };
 
   const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
@@ -257,11 +295,13 @@ export default function BelletmenPage() {
     setSendingKey(btnKey);
     setFeedback(null);
 
+    const veliIsim = veliTipi === 'Anne' ? (student.anneAdi || 'Anne') : (student.babaAdi || 'Baba');
+
     try {
       const res = await fetch('/api/belletmen/bildirim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, ogrenciAd: student.name, odaNo: student.oda, tarih, seans, veliTipi })
+        body: JSON.stringify({ phone, ogrenciAd: student.name, odaNo: student.oda, tarih, seans, veliTipi: `${veliTipi} - ${veliIsim}` })
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -269,7 +309,7 @@ export default function BelletmenPage() {
         setFeedback({ type: 'success', text: data.message });
       } else {
         let directSuccess = false;
-        const fallbackMsg = data.customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${veliTipi}), öğrenciniz *${student.name}* (Oda: ${student.oda}) *${tarih}* tarihli yoklamada pansiyonda *BULUNAMAMIŞTIR (YOK)*.`;
+        const fallbackMsg = data.customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${veliIsim}), öğrenciniz *${student.name}* (Oda: ${student.oda}) *${tarih}* tarihli yoklamada pansiyonda *BULUNAMAMIŞTIR (YOK)*.`;
         for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
           if (!directUrl) continue;
           try {
@@ -282,7 +322,7 @@ export default function BelletmenPage() {
             if (r2.ok && d2.success) {
               directSuccess = true;
               setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
-              setFeedback({ type: 'success', text: `✅ ${student.name} velisine (${phone}) WhatsApp bildirimi gönderildi!` });
+              setFeedback({ type: 'success', text: `✅ ${student.name} velisine (${veliIsim} - ${phone}) WhatsApp bildirimi gönderildi!` });
               break;
             }
           } catch {}
@@ -348,7 +388,6 @@ export default function BelletmenPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {/* ERKEK BELLETMEN */}
             <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-5 space-y-4">
               <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
                 <UserCheck className="w-6 h-6" />
@@ -394,7 +433,6 @@ export default function BelletmenPage() {
               </button>
             </div>
 
-            {/* KADIN BELLETMEN */}
             <div className="border-2 border-rose-200 bg-rose-50/40 rounded-2xl p-5 space-y-4">
               <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
                 <UserCheck className="w-6 h-6" />
@@ -449,7 +487,6 @@ export default function BelletmenPage() {
     );
   }
 
-  // Nöbet Defteri İçin YALNIZCA Aktif Belletmenin Kendi Cinsiyet Grubundaki Öğrenciler
   const bolumYoklar = strictlyIsolatedStudents.filter((s) => s.status === 'yok');
   const bolumIzinliler = strictlyIsolatedStudents.filter((s) => s.status === 'izinli');
 
@@ -457,7 +494,7 @@ export default function BelletmenPage() {
     <div className="min-h-screen bg-slate-100 p-2.5 sm:p-6 pb-20">
       <div className="max-w-5xl mx-auto space-y-4 print:hidden">
 
-        {/* ÜST PANEL (Grup Değiştirme Kaldırıldı - Tam İzolasyon) */}
+        {/* ÜST PANEL */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3.5">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="space-y-1">
@@ -469,20 +506,28 @@ export default function BelletmenPage() {
                 </span>
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  {aktifRol === 'erkek' ? 'Yalnızca Erkek Öğrenciler Yetkisi' : 'Yalnızca Kız Öğrenciler Yetkisi'}
+                  Canlı Senkronizasyon Aktif ({lastSyncTime || 'Şimdi'})
                 </span>
               </div>
               <h1 className="text-base sm:text-xl font-extrabold text-slate-900">
-                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklama Ekranı
+                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklama Ekranı (Toplam: {strictlyIsolatedStudents.length} Öğrenci)
               </h1>
             </div>
 
-            <button
-              onClick={handleLogout}
-              className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 py-2.5 px-4 rounded-xl cursor-pointer min-h-[42px]"
-            >
-              <LogOut className="w-4 h-4 shrink-0" /> Güvenli Çıkış Yap
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => loadRoleSpecificData(aktifRol)}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 py-2.5 px-3.5 rounded-xl cursor-pointer min-h-[42px]"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Listeyi Yenile
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 py-2.5 px-4 rounded-xl cursor-pointer min-h-[42px]"
+              >
+                <LogOut className="w-4 h-4 shrink-0" /> Çıkış
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
@@ -518,31 +563,42 @@ export default function BelletmenPage() {
           </div>
         )}
 
-        {/* KAT SEÇİMİ VE TÜMÜNÜ VAR YAP */}
+        {/* KAT SEÇİMİ (HER KATTAKİ ÖĞRENCİ SAYISINI CANLI GÖSTERİR) */}
         <div className="bg-white/95 backdrop-blur-md sticky top-2 z-20 rounded-2xl p-3 shadow-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="grid grid-cols-3 gap-1.5">
-            {[1, 2, 3].map((kat) => (
-              <button
-                key={kat}
-                onClick={() => setSelectedKat(kat)}
-                className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                  selectedKat === kat ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {kat}. Kat ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'})
-              </button>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <button
+              onClick={() => setSelectedKat(0)}
+              className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
+                selectedKat === 0 ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              Tüm Katlar ({strictlyIsolatedStudents.length})
+            </button>
+            {[1, 2, 3].map((kat) => {
+              const count = strictlyIsolatedStudents.filter((s) => Number(s.kat) === kat).length;
+              return (
+                <button
+                  key={kat}
+                  onClick={() => setSelectedKat(kat)}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
+                    selectedKat === kat ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {kat}. Kat ({count})
+                </button>
+              );
+            })}
           </div>
 
           <button onClick={handleTumunuVarYap} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px]">
-            <CheckCircle2 className="w-4 h-4" /> Bu Kattaki Tümünü Var Yap
+            <CheckCircle2 className="w-4 h-4" /> Tümünü Var Yap
           </button>
         </div>
 
         {/* ÖZET KARTLARI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
-            <div className="text-[11px] text-slate-500">{selectedKat}. Kat Mevcudu ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'})</div>
+            <div className="text-[11px] text-slate-500">{selectedKat === 0 ? 'Toplam Mevcut' : `${selectedKat}. Kat Mevcudu`}</div>
             <div className="text-xl font-extrabold text-slate-900 mt-0.5">{katMevcudu}</div>
           </div>
           <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200">
@@ -562,7 +618,7 @@ export default function BelletmenPage() {
         {/* ODALAR VE ÖĞRENCİ KARTLARI */}
         {odalar.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
-            Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır.
+            Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır. Üstteki <strong>Tüm Katlar</strong> butonuna tıklayarak diğer katlardaki öğrencileri görebilirsiniz.
           </div>
         ) : (
           <div className="space-y-4">
@@ -572,7 +628,7 @@ export default function BelletmenPage() {
                 <div key={odaNo} className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                   <div className={`${aktifRol === 'erkek' ? 'bg-slate-900' : 'bg-rose-950'} text-white px-4 py-3 flex items-center justify-between`}>
                     <div className="flex items-center gap-2 text-xs font-bold">
-                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo} ({aktifRol === 'erkek' ? 'Erkek Pansiyonu' : 'Kız Pansiyonu'})
+                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo} ({odaOgrencileri[0]?.kat}. Kat)
                     </div>
                     <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full text-slate-100">
                       {odaOgrencileri.length} Öğrenci
@@ -590,7 +646,10 @@ export default function BelletmenPage() {
                             <div>
                               <h3 className="font-extrabold text-slate-900 text-sm">{student.name}</h3>
                               <p className="text-[11px] text-slate-500 mt-0.5">
-                                Oda: {student.oda} | Yatak: {student.yatak} | T.C.: {student.tc}
+                                {student.kat}. Kat • Oda: <strong>{student.oda}</strong>
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                Anne: <strong>{student.anneAdi || '-'}</strong> | Baba: <strong>{student.babaAdi || '-'}</strong>
                               </p>
                             </div>
                             <span className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 ${student.status === 'izinli' ? 'bg-amber-100 text-amber-800' : student.status === 'yok' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -619,21 +678,21 @@ export default function BelletmenPage() {
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                     <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
                                       <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px]">Anne:</span>
+                                      <span className="text-slate-500 mr-1 text-[11px] truncate">{student.anneAdi || 'Anne'}:</span>
                                       <input type="tel" value={student.anneTel} onChange={(e) => handlePhoneChange(student.id, 'anneTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
                                     </div>
                                     <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
                                       <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px]">Baba:</span>
+                                      <span className="text-slate-500 mr-1 text-[11px] truncate">{student.babaAdi || 'Baba'}:</span>
                                       <input type="tel" value={student.babaTel} onChange={(e) => handlePhoneChange(student.id, 'babaTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
                                     </div>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <button type="button" disabled={sendingKey === anneKey} onClick={() => handleSendWhatsApp(student, 'Anne', student.anneTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === anneKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[anneKey] ? <><Check className="w-4 h-4" /> Anneye Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Anneye Mesaj At</>}
+                                      {sendingKey === anneKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[anneKey] ? <><Check className="w-4 h-4" /> Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Anneye WhatsApp At</>}
                                     </button>
                                     <button type="button" disabled={sendingKey === babaKey} onClick={() => handleSendWhatsApp(student, 'Baba', student.babaTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === babaKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[babaKey] ? <><Check className="w-4 h-4" /> Babaya Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Babaya Mesaj At</>}
+                                      {sendingKey === babaKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[babaKey] ? <><Check className="w-4 h-4" /> Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Babaya WhatsApp At</>}
                                     </button>
                                   </div>
                                 </div>
@@ -651,7 +710,7 @@ export default function BelletmenPage() {
         )}
       </div>
 
-      {/* RESMÎ MEB NÖBET DEFTERİ MODAL (Yalnızca Aktif Belletmenin Kendi Bölümünü Gösterir!) */}
+      {/* RESMÎ MEB NÖBET DEFTERİ MODAL */}
       {nobetDefteriAcik && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0">
           <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
@@ -665,36 +724,6 @@ export default function BelletmenPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 print:hidden">
-              {aktifRol === 'erkek' ? (
-                <>
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-800 mb-1">1. Nöbetçi Erkek Belletmen</label>
-                    <input type="text" value={erkekBelletmen1} onChange={(e) => setErkekBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-800 mb-1">2. Nöbetçi Erkek Belletmen</label>
-                    <input type="text" value={erkekBelletmen2} onChange={(e) => setErkekBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-[11px] font-bold text-rose-800 mb-1">1. Nöbetçi Kadın Belletmen</label>
-                    <input type="text" value={kizBelletmen1} onChange={(e) => setKizBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-rose-800 mb-1">2. Nöbetçi Kadın Belletmen</label>
-                    <input type="text" value={kizBelletmen2} onChange={(e) => setKizBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
-                  </div>
-                </>
-              )}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1">Günlük Nöbet Vukuat / Olay Notları</label>
-                <textarea rows={2} value={nobetNotu} onChange={(e) => setNobetNotu(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-white" />
-              </div>
-            </div>
-
             <div className="border border-slate-300 p-4 sm:p-6 rounded-xl space-y-4 text-slate-900 print:border-none print:p-0">
               <div className="text-center space-y-1 border-b-2 border-slate-800 pb-3">
                 <p className="text-xs font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</p>
@@ -705,15 +734,12 @@ export default function BelletmenPage() {
               </div>
 
               <div className="border border-slate-300 p-3 rounded-lg text-xs">
-                <div className={`font-bold border-b pb-1 mb-1.5 ${aktifRol === 'erkek' ? 'text-blue-900' : 'text-rose-900'}`}>
-                  {aktifRol === 'erkek' ? 'ERKEK PANSİYONU YOKLAMA ÖZETİ' : 'KIZ PANSİYONU YOKLAMA ÖZETİ'}
-                </div>
-                Toplam Kayıtlı: <strong>{strictlyIsolatedStudents.length}</strong> | Pansiyonda Mevcut (Var): <strong>{strictlyIsolatedStudents.filter(s => s.status === 'var').length}</strong> | Yoklamada Bulunmayan (Yok): <strong>{bolumYoklar.length}</strong> | İzinli: <strong>{bolumIzinliler.length}</strong>
+                Toplam Kayıtlı: <strong>{strictlyIsolatedStudents.length}</strong> | Var: <strong>{strictlyIsolatedStudents.filter(s => s.status === 'var').length}</strong> | Yok: <strong>{bolumYoklar.length}</strong> | İzinli: <strong>{bolumIzinliler.length}</strong>
               </div>
 
               <div className="space-y-1.5">
                 <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-rose-600">
-                  1. Yoklamada Bulunmayan ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'}) Öğrenciler ({bolumYoklar.length})
+                  1. Yoklamada Bulunmayan Öğrenciler ({bolumYoklar.length})
                 </h4>
                 {bolumYoklar.length === 0 ? (
                   <p className="text-xs italic pl-2">Yoklamada habersiz eksik öğrenci yoktur.</p>
@@ -721,39 +747,12 @@ export default function BelletmenPage() {
                   <div className="space-y-1 text-xs">
                     {bolumYoklar.map((s) => (
                       <div key={s.id} className="border-b py-1 flex justify-between">
-                        <strong>{s.name} (Oda {s.oda} - Yatak {s.yatak})</strong>
-                        <span>Veli Tel: {s.anneTel}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-amber-500">
-                  2. İzinli ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'}) Öğrenciler ({bolumIzinliler.length})
-                </h4>
-                {bolumIzinliler.length === 0 ? (
-                  <p className="text-xs italic pl-2">İzinli öğrenci yoktur.</p>
-                ) : (
-                  <div className="space-y-1 text-xs">
-                    {bolumIzinliler.map((s) => (
-                      <div key={s.id} className="border-b py-1 flex justify-between">
                         <strong>{s.name} (Oda {s.oda})</strong>
-                        <span>{s.izinAciklama}</span>
+                        <span>Veli: {s.anneAdi} ({s.anneTel})</span>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-indigo-600">
-                  3. Nöbetçi Belletmenler Vukuat ve Değerlendirme Notu
-                </h4>
-                <div className="p-2.5 border border-slate-300 rounded-lg text-xs min-h-[50px]">
-                  {nobetNotu}
-                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4 pt-4 text-center text-xs">

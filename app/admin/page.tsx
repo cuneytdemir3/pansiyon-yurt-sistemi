@@ -97,6 +97,7 @@ export default function AdminDashboardPage() {
   );
 
   const syncFromStore = (store: any) => {
+    try { localStorage.setItem('pansiyon_shared_cache', JSON.stringify(store)); } catch {}
     if (store.students) setStudents(store.students);
     if (store.belletmenler) setBelletmenler(store.belletmenler);
     if (store.aylikNobetler) setAylikNobetler(store.aylikNobetler);
@@ -105,7 +106,7 @@ export default function AdminDashboardPage() {
 
   const fetchAll = async () => {
     try {
-      const res = await fetch('/api/pansiyon');
+      const res = await fetch('/api/pansiyon?t=' + Date.now(), { cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.store) syncFromStore(data.store);
     } catch {}
