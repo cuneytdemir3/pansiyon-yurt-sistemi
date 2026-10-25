@@ -1,17 +1,37 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users, Upload, Plus, Trash2, Shield, FileSpreadsheet, LogOut,
-  KeyRound, Eye, EyeOff, Calendar, UserCheck, Wand2, Save,
-  Activity, ShieldAlert, CheckCircle2, AlertTriangle, Info, Clock, X, Download, FolderUp
+  KeyRound, Eye, EyeOff, Calendar, Wand2, Save,
+  Activity, ShieldAlert, CheckCircle2, AlertTriangle, Info, X, Download, FolderUp, Sparkles
 } from 'lucide-react';
 
 interface Student { id: string; name: string; cinsiyet: string; tc: string; sinif: string; kat: number; oda: string; yatak: string; anneTel: string; babaTel: string; status: string; }
 interface Belletmen { id: string; name: string; cinsiyet: string; brans: string; phone: string; password: string; }
 interface MonthlyDutyDay { tarih: string; erkek1: string; erkek2: string; kadin1: string; kadin2: string; }
 interface AuditLog { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
+
+const SAMPLE_STUDENT_ROWS = [
+  { name: 'Kerem Aksoy', cinsiyet: 'erkek', tc: '12345678930', sinif: '9-A', kat: 1, oda: '103', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469' },
+  { name: 'Emirhan Yıldız', cinsiyet: 'erkek', tc: '12345678931', sinif: '10-B', kat: 2, oda: '202', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469' },
+  { name: 'Yağmur Koç', cinsiyet: 'kiz', tc: '12345678933', sinif: '9-B', kat: 1, oda: 'K-102', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469' },
+  { name: 'Defne Arslan', cinsiyet: 'kiz', tc: '12345678934', sinif: '11-A', kat: 2, oda: 'K-202', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469' },
+];
+
+const SAMPLE_BELLETMEN_ROWS = [
+  { name: 'Serhat AKAN', cinsiyet: 'erkek', brans: 'Matematik', phone: '05416571469', password: '1453' },
+  { name: 'Mustafa DEMİR', cinsiyet: 'erkek', brans: 'Tarih', phone: '05416571469', password: '1234' },
+  { name: 'Kübra GÜLLÜ', cinsiyet: 'kadin', brans: 'Edebiyat', phone: '05416571469', password: '2026' },
+  { name: 'Elif KAYA', cinsiyet: 'kadin', brans: 'İngilizce', phone: '05416571469', password: '1234' },
+];
+
+const SAMPLE_NOBET_ROWS = [
+  { tarih: '2026-10-27', erkek1: 'Cüneyt DEMİR', erkek2: 'Ali BEY', kadin1: 'Ayşenur KAYA', kadin2: 'Fatma YILMAZ' },
+  { tarih: '2026-10-28', erkek1: 'Furkan DEMİR', erkek2: 'Hasan ÇELİK', kadin1: 'Zeynep ŞAHİN', kadin2: 'Merve AYDIN' },
+  { tarih: '2026-10-29', erkek1: 'Cüneyt DEMİR', erkek2: 'Furkan DEMİR', kadin1: 'Ayşenur KAYA', kadin2: 'Zeynep ŞAHİN' },
+];
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<'belletmen' | 'nobet' | 'ogrenci' | 'loglar'>('ogrenci');
@@ -23,33 +43,33 @@ export default function AdminDashboardPage() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Dosya Input Referansları
   const studentFileRef = useRef<HTMLInputElement | null>(null);
   const belletmenFileRef = useRef<HTMLInputElement | null>(null);
   const nobetFileRef = useRef<HTMLInputElement | null>(null);
 
-  // Tekil Belletmen State
   const [bName, setBName] = useState('');
   const [bCinsiyet, setBCinsiyet] = useState<'erkek' | 'kadin'>('erkek');
   const [bBrans, setBBrans] = useState('');
-  const [bPhone, setBPhone] = useState('0541');
+  const [bPhone, setBPhone] = useState('05416571469');
   const [bPassword, setBPassword] = useState('1234');
-  const [belletmenCsv, setBelletmenCsv] = useState('Serhat AKAN, erkek, Matematik, 05411112233, 1453\nElif DEMİR, kadin, Edebiyat, 05412223344, 2026');
+  const [belletmenCsv, setBelletmenCsv] = useState(
+    'Serhat AKAN, erkek, Matematik, 05416571469, 1453\nKübra GÜLLÜ, kadin, Edebiyat, 05416571469, 2026'
+  );
 
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [editingPasswordId, setEditingPasswordId] = useState<string | null>(null);
   const [newPasswordVal, setNewPasswordVal] = useState('');
 
-  // Aylık Nöbet State
   const [nobetAySecim, setNobetAySecim] = useState('2026-10');
   const [nTarih, setNTarih] = useState('2026-10-29');
   const [nErkek1, setNErkek1] = useState('Cüneyt DEMİR');
   const [nErkek2, setNErkek2] = useState('Ali BEY');
   const [nKadin1, setNKadin1] = useState('Ayşenur KAYA');
   const [nKadin2, setNKadin2] = useState('Fatma YILMAZ');
-  const [nobetCsv, setNobetCsv] = useState('2026-10-29, Cüneyt DEMİR, Ali BEY, Ayşenur KAYA, Fatma YILMAZ');
+  const [nobetCsv, setNobetCsv] = useState(
+    '2026-10-27, Cüneyt DEMİR, Ali BEY, Ayşenur KAYA, Fatma YILMAZ\n2026-10-28, Furkan DEMİR, Hasan ÇELİK, Zeynep ŞAHİN, Merve AYDIN'
+  );
 
-  // Tekil Öğrenci State
   const [sName, setSName] = useState('');
   const [sCinsiyet, setSCinsiyet] = useState<'erkek' | 'kiz'>('erkek');
   const [sTc, setSTc] = useState('');
@@ -59,7 +79,9 @@ export default function AdminDashboardPage() {
   const [sYatak, setSYatak] = useState('A');
   const [sAnneTel, setSAnneTel] = useState('05416571469');
   const [sBabaTel, setSBabaTel] = useState('05416571469');
-  const [studentCsv, setStudentCsv] = useState('Ali Veli, erkek, 12345678910, 9-B, 1, 103, A, 05416571469, 05416571469');
+  const [studentCsv, setStudentCsv] = useState(
+    'Kerem Aksoy, erkek, 12345678930, 9-A, 1, 103, A, 05416571469, 05416571469\nYağmur Koç, kiz, 12345678933, 9-B, 1, K-102, A, 05416571469, 05416571469'
+  );
 
   const syncFromStore = (store: any) => {
     if (store.students) setStudents(store.students);
@@ -83,23 +105,66 @@ export default function AdminDashboardPage() {
   }, []);
 
   // =========================================================================
-  // 1) GERÇEK EXCEL (.XLSX / .XLS / .CSV) DOSYASI OKUMA VE YÜKLEME FONKSİYONLARI
+  // 1) TEK TIKLA ÖRNEK VERİ YÜKLEME (DOSYA SEÇMEDEN HIZLI TEST)
   // =========================================================================
+  const handleLoadSampleStudents = async () => {
+    setLoading(true);
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bulk_import', rows: SAMPLE_STUDENT_ROWS }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      syncFromStore(data.store);
+      setMsg('✅ Örnek Excel listesindeki 4 öğrenci (2 Erkek, 2 Kız) tek tıkla sisteme yüklendi!');
+    }
+    setLoading(false);
+  };
 
-  // ÖĞRENCİ EXCEL DOSYASI YÜKLEME
+  const handleLoadSampleBelletmen = async () => {
+    setLoading(true);
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bulk_add_belletmen', rows: SAMPLE_BELLETMEN_ROWS }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      syncFromStore(data.store);
+      setMsg('✅ Örnek Excel listesindeki 4 Belletmen Öğretmen (2 Erkek, 2 Kadın) sisteme yüklendi!');
+    }
+    setLoading(false);
+  };
+
+  const handleLoadSampleNobet = async () => {
+    setLoading(true);
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bulk_monthly_duty', rows: SAMPLE_NOBET_ROWS }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      syncFromStore(data.store);
+      setMsg('✅ Örnek Excel nöbet çizelgesindeki 3 günlük nöbet listesi sisteme yüklendi!');
+    }
+    setLoading(false);
+  };
+
+  // =========================================================================
+  // 2) GERÇEK EXCEL (.XLSX / .XLS / .CSV) DOSYASI SEÇEREK YÜKLEME
+  // =========================================================================
   const handleStudentExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
-    setMsg('Excel dosyası okunuyor...');
-
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const rawRows: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
 
-      // Başlık satırını atla (İlk hücrede "Ad" veya "İsim" geçiyorsa)
       const dataRows = rawRows.filter((r, idx) => {
         if (!r || r.length === 0 || !String(r[0] || '').trim()) return false;
         const firstCell = String(r[0]).toLowerCase();
@@ -137,13 +202,10 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // BELLETMEN EXCEL DOSYASI YÜKLEME
   const handleBelletmenExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
-    setMsg('Belletmen Excel dosyası okunuyor...');
-
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
@@ -173,7 +235,7 @@ export default function AdminDashboardPage() {
       const data = await res.json();
       if (data.success) {
         syncFromStore(data.store);
-        setMsg(`📁 "${file.name}" dosyasından ${formattedRows.length} belletmen öğretmen başarıyla yüklendi!`);
+        setMsg(`📁 "${file.name}" dosyasından ${formattedRows.length} belletmen başarıyla yüklendi!`);
       }
     } catch {
       setMsg('Excel dosyası okunurken hata oluştu.');
@@ -183,12 +245,10 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // AYLIK NÖBET EXCEL DOSYASI YÜKLEME
   const handleNobetExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
-
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
@@ -229,13 +289,12 @@ export default function AdminDashboardPage() {
   };
 
   // =========================================================================
-  // 2) ÖRNEK EXCEL (.XLSX) ŞABLONU İNDİRME FONKSİYONLARI
+  // 3) ÖRNEK EXCEL (.XLSX) ŞABLONU İNDİRME FONKSİYONLARI
   // =========================================================================
   const downloadStudentTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
       ['Ad Soyad', 'Cinsiyet (erkek/kiz)', 'TC Kimlik', 'Sınıf', 'Kat', 'Oda No', 'Yatak', 'Anne Telefon', 'Baba Telefon'],
-      ['Emre Demir', 'erkek', '12345678920', '9-A', 1, '103', 'A', '05416571469', '05416571469'],
-      ['Zeynep Kaya', 'kiz', '12345678921', '10-B', 1, 'K-102', 'B', '05416571469', '05416571469']
+      ...SAMPLE_STUDENT_ROWS.map((r) => [r.name, r.cinsiyet, r.tc, r.sinif, r.kat, r.oda, r.yatak, r.anneTel, r.babaTel]),
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Ogrenci_Listesi');
@@ -245,8 +304,7 @@ export default function AdminDashboardPage() {
   const downloadBelletmenTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
       ['Ad Soyad', 'Cinsiyet (erkek/kadin)', 'Branş', 'Telefon', 'Giriş Şifresi'],
-      ['Serhat AKAN', 'erkek', 'Matematik', '05416571469', '1453'],
-      ['Elif DEMİR', 'kadin', 'Türk Dili ve Edebiyatı', '05416571469', '2026']
+      ...SAMPLE_BELLETMEN_ROWS.map((r) => [r.name, r.cinsiyet, r.brans, r.phone, r.password]),
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Belletmen_Listesi');
@@ -256,15 +314,13 @@ export default function AdminDashboardPage() {
   const downloadNobetTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
       ['Tarih (YYYY-AA-GG)', '1. Erkek Belletmen', '2. Erkek Belletmen', '1. Kadın Belletmen', '2. Kadın Belletmen'],
-      ['2026-10-29', 'Cüneyt DEMİR', 'Ali BEY', 'Ayşenur KAYA', 'Fatma YILMAZ'],
-      ['2026-10-30', 'Furkan DEMİR', 'Hasan ÇELİK', 'Zeynep ŞAHİN', 'Merve AYDIN']
+      ...SAMPLE_NOBET_ROWS.map((r) => [r.tarih, r.erkek1, r.erkek2, r.kadin1, r.kadin2]),
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Aylik_Nobet');
     XLSX.writeFile(wb, 'Ornek_Aylik_Nobet_Sablonu.xlsx');
   };
 
-  // --- METİN KUTUSU AYRIŞTIRICI ---
   const parseExcelData = (text: string) => {
     const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
     return lines.map((line) => {
@@ -291,7 +347,7 @@ export default function AdminDashboardPage() {
     const rows = parsed.map(p => ({ name: p[0], cinsiyet: p[1] || 'erkek', brans: p[2] || 'Öğretmen', phone: p[3] || '05416571469', password: p[4] || '1234' }));
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_add_belletmen', rows }) });
     const data = await res.json();
-    if (data.success) { syncFromStore(data.store); setBelletmenCsv(''); setMsg(data.message); }
+    if (data.success) { syncFromStore(data.store); setMsg(data.message); }
     setLoading(false);
   };
 
@@ -333,7 +389,7 @@ export default function AdminDashboardPage() {
     const rows = parsed.map(p => ({ tarih: p[0], erkek1: p[1] || '-', erkek2: p[2] || '-', kadin1: p[3] || '-', kadin2: p[4] || '-' }));
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_monthly_duty', rows }) });
     const data = await res.json();
-    if (data.success) { syncFromStore(data.store); setNobetCsv(''); setMsg(data.message); }
+    if (data.success) { syncFromStore(data.store); setMsg(data.message); }
     setLoading(false);
   };
 
@@ -361,7 +417,7 @@ export default function AdminDashboardPage() {
     const rows = parsed.map(p => ({ name: p[0], cinsiyet: p[1] || 'erkek', tc: p[2] || '10000000000', sinif: p[3] || '9-A', kat: Number(p[4]) || 1, oda: p[5] || '101', yatak: p[6] || 'A', anneTel: p[7] || '05416571469', babaTel: p[8] || '05416571469' }));
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_import', rows }) });
     const data = await res.json();
-    if (data.success) { syncFromStore(data.store); setStudentCsv(''); setMsg(data.message); }
+    if (data.success) { syncFromStore(data.store); setMsg(data.message); }
     setLoading(false);
   };
 
@@ -407,7 +463,7 @@ export default function AdminDashboardPage() {
             <div>
               <h1 className="text-base sm:text-xl font-extrabold text-slate-900">Pansiyon İdare & Yönetici Paneli</h1>
               <p className="text-[11px] sm:text-xs text-slate-500">
-                Excel (.xlsx) Dosyası ile Öğrenci & Belletmen Yükleme • Aylık Nöbet • Güvenlik Günlüğü
+                Örnek Excel (.xlsx) Şablonları • Toplu Öğrenci & Belletmen Yükleme • Güvenlik Günlüğü
               </p>
             </div>
           </div>
@@ -436,197 +492,214 @@ export default function AdminDashboardPage() {
 
         {msg && (
           <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-2xl text-xs font-bold flex justify-between items-center shadow-xs">
-            <span>✅ {msg}</span>
+            <span>{msg}</span>
             <button onClick={() => setMsg('')} className="underline ml-3 cursor-pointer">Kapat</button>
           </div>
         )}
 
         {/* ===================================================================
-            SEKME 1: ÖĞRENCİ YÖNETİMİ VE EXCEL DOSYASI (.XLSX) İLE TOPLU YÜKLEME
+            SEKME 1: ÖĞRENCİ EXCEL YÜKLEME ÖRNEĞİ VE FORMU
         =================================================================== */}
         {activeTab === 'ogrenci' && (
           <div className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-              {/* EXCEL DOSYASI SEÇEREK VEYA YAPIŞTIRARAK TOPLU ÖĞRENCİ YÜKLEME */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <h2 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Excel Dosyası (.xlsx) ile Toplu Öğrenci Yükle
+
+            {/* GÖRSEL EXCEL ÖRNEK TABLOSU KARTI */}
+            <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
+                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Öğrenci Excel Yükleme Örneği (Sütun Sırası)
                   </h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Hazırlayacağınız Excel (`.xlsx`) dosyasının sütunları aşağıdaki örnek tabloyla aynı sırada olmalıdır:
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={downloadStudentTemplate}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-3.5 py-2 rounded-xl cursor-pointer"
                   >
-                    <Download className="w-3.5 h-3.5" /> Örnek Excel İndir (.xlsx)
+                    <Download className="w-4 h-4" /> Örnek Excel (.xlsx) İndir
                   </button>
-                </div>
-
-                {/* Doğrudan Excel Dosyası Seçme Alanı */}
-                <div className="p-4 bg-emerald-50/60 border-2 border-dashed border-emerald-300 rounded-2xl text-center space-y-2.5">
-                  <input
-                    ref={studentFileRef}
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={handleStudentExcelUpload}
-                    className="hidden"
-                    id="student-excel-input"
-                  />
-                  <label
-                    htmlFor="student-excel-input"
-                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm cursor-pointer transition-all min-h-[46px]"
-                  >
-                    <FolderUp className="w-4 h-4" />
-                    {loading ? 'Excel Dosyası Yükleniyor...' : 'Bilgisayardan / Telefondan Excel Dosyası Seç (.xlsx / .xls)'}
-                  </label>
-                  <p className="text-[11px] text-slate-500">
-                    Sütun Sırası: <code>Ad Soyad | erkek/kiz | TC | Sınıf | Kat | Oda | Yatak | AnneTel | BabaTel</code>
-                  </p>
-                </div>
-
-                {/* Alternatif: Kopyala-Yapıştır Alanı */}
-                <div className="space-y-2 pt-1">
-                  <label className="block text-[11px] font-bold text-slate-500">
-                    Veya Excel tablosundan kopyalayıp aşağıya yapıştırın:
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={studentCsv}
-                    onChange={(e) => setStudentCsv(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono bg-slate-50"
-                  />
                   <button
-                    onClick={handleBulkImportStudents}
+                    type="button"
+                    onClick={handleLoadSampleStudents}
                     disabled={loading}
-                    className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center justify-center gap-2"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl cursor-pointer shadow-xs"
                   >
-                    <Upload className="w-3.5 h-3.5" /> Yapıştırılan Metni Aktar
+                    <Sparkles className="w-4 h-4" /> Tek Tıkla Bu Örneği Sisteme Yükle
                   </button>
                 </div>
               </div>
 
-              {/* TEKİL ÖĞRENCİ KAYDI */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3.5">
-                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-indigo-600" /> Tekil Öğrenci Kaydı
-                </h2>
-                <form onSubmit={handleAddStudent} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                  <input type="text" required placeholder="Ad Soyad" value={sName} onChange={(e) => setSName(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <select value={sCinsiyet} onChange={(e) => setSCinsiyet(e.target.value as 'erkek' | 'kiz')} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs font-bold bg-white min-h-[44px]">
-                    <option value="erkek">Erkek Pansiyonu</option>
-                    <option value="kiz">Kız Pansiyonu</option>
-                  </select>
-                  <input type="text" placeholder="T.C." value={sTc} onChange={(e) => setSTc(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <input type="text" placeholder="Sınıf (9-A)" value={sSinif} onChange={(e) => setSSinif(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <select value={sKat} onChange={(e) => setSKat(Number(e.target.value))} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs bg-white min-h-[44px]">
-                    <option value={1}>1. Kat</option>
-                    <option value={2}>2. Kat</option>
-                    <option value={3}>3. Kat</option>
-                  </select>
-                  <input type="text" placeholder="Oda No (101 / K-101)" value={sOda} onChange={(e) => setSOda(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <input type="tel" placeholder="Anne Tel" value={sAnneTel} onChange={(e) => setSAnneTel(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <input type="tel" placeholder="Baba Tel" value={sBabaTel} onChange={(e) => setSBabaTel(e.target.value)} className="border rounded-xl px-3 py-2.5 text-base sm:text-xs min-h-[44px]" />
-                  <button type="submit" disabled={loading} className="sm:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold cursor-pointer min-h-[46px]">
-                    Öğrenciyi Kaydet
+              {/* Örnek Excel Görsel Önizleme Tablosu */}
+              <div className="overflow-x-auto border border-emerald-200 rounded-xl">
+                <table className="w-full text-[11px] border-collapse text-left">
+                  <thead>
+                    <tr className="bg-emerald-700 text-white font-bold">
+                      <th className="p-2 border-r border-emerald-600">A: Ad Soyad</th>
+                      <th className="p-2 border-r border-emerald-600">B: Cinsiyet</th>
+                      <th className="p-2 border-r border-emerald-600">C: TC Kimlik</th>
+                      <th className="p-2 border-r border-emerald-600">D: Sınıf</th>
+                      <th className="p-2 border-r border-emerald-600">E: Kat</th>
+                      <th className="p-2 border-r border-emerald-600">F: Oda No</th>
+                      <th className="p-2 border-r border-emerald-600">G: Yatak</th>
+                      <th className="p-2 border-r border-emerald-600">H: Anne Telefon</th>
+                      <th className="p-2">I: Baba Telefon</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-100 bg-emerald-50/30 font-mono">
+                    {SAMPLE_STUDENT_ROWS.map((row, i) => (
+                      <tr key={i}>
+                        <td className="p-2 font-sans font-bold text-slate-800 border-r border-emerald-100">{row.name}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.cinsiyet}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.tc}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.sinif}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.kat}</td>
+                        <td className="p-2 border-r border-emerald-100 font-bold">{row.oda}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.yatak}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.anneTel}</td>
+                        <td className="p-2">{row.babaTel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Dosya Seçme Kutusu */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 bg-emerald-50/70 border-2 border-dashed border-emerald-300 rounded-2xl flex flex-col justify-center items-center text-center space-y-2">
+                  <input ref={studentFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleStudentExcelUpload} className="hidden" id="student-excel-input" />
+                  <label htmlFor="student-excel-input" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm cursor-pointer min-h-[46px]">
+                    <FolderUp className="w-4 h-4" /> Bilgisayardan / Telefondan Excel Dosyası Seç (.xlsx / .xls)
+                  </label>
+                  <span className="text-[11px] text-slate-500">Seçtiğiniz anda otomatik okunur ve listeye eklenir.</span>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-slate-600">Veya Excel satırlarını kopyalayıp buraya yapıştırın:</label>
+                  <textarea rows={2} value={studentCsv} onChange={(e) => setStudentCsv(e.target.value)} className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono bg-slate-50" />
+                  <button onClick={handleBulkImportStudents} disabled={loading} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center justify-center gap-2">
+                    <Upload className="w-3.5 h-3.5" /> Yapıştırılan Öğrenci Listesini Aktar
                   </button>
-                </form>
+                </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Kayıtlı Öğrenciler ({students.length})</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {students.map((s) => (
-                  <div key={s.id} className="border border-slate-200 rounded-xl p-3 text-xs flex justify-between items-center bg-slate-50/50">
-                    <div>
-                      <div className="font-extrabold text-slate-900">{s.name}</div>
-                      <div className="text-[11px] text-slate-500">{s.cinsiyet === 'kiz' ? '👩 Kız' : '👨 Erkek'} • {s.kat}. Kat - Oda {s.oda}</div>
-                      <div className="text-[11px] font-mono text-slate-600 mt-0.5">{s.anneTel}</div>
-                    </div>
-                    <button onClick={() => handleDeleteStudent(s.id)} className="text-rose-600 p-1.5 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+            {/* TEKİL ÖĞRENCİ EKLEME & LİSTE */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3.5">
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-indigo-600" /> Tekil Öğrenci Ekle
+                </h2>
+                <form onSubmit={handleAddStudent} className="grid grid-cols-1 gap-2.5 text-xs">
+                  <input type="text" required placeholder="Ad Soyad" value={sName} onChange={(e) => setSName(e.target.value)} className="border rounded-xl px-3 py-2.5" />
+                  <select value={sCinsiyet} onChange={(e) => setSCinsiyet(e.target.value as 'erkek' | 'kiz')} className="border rounded-xl px-3 py-2.5 font-bold bg-white">
+                    <option value="erkek">👨 Erkek Pansiyonu</option>
+                    <option value="kiz">👩 Kız Pansiyonu</option>
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={sKat} onChange={(e) => setSKat(Number(e.target.value))} className="border rounded-xl px-3 py-2.5 bg-white">
+                      <option value={1}>1. Kat</option>
+                      <option value={2}>2. Kat</option>
+                      <option value={3}>3. Kat</option>
+                    </select>
+                    <input type="text" placeholder="Oda No (101)" value={sOda} onChange={(e) => setSOda(e.target.value)} className="border rounded-xl px-3 py-2.5" />
                   </div>
-                ))}
+                  <input type="tel" placeholder="Anne Tel" value={sAnneTel} onChange={(e) => setSAnneTel(e.target.value)} className="border rounded-xl px-3 py-2.5" />
+                  <button type="submit" className="bg-indigo-600 text-white py-2.5 rounded-xl font-bold cursor-pointer">Kaydet</button>
+                </form>
+              </div>
+
+              <div className="lg:col-span-2 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3">
+                <h3 className="text-sm font-bold text-slate-900">Kayıtlı Öğrenciler ({students.length})</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto">
+                  {students.map((s) => (
+                    <div key={s.id} className="border border-slate-200 rounded-xl p-3 text-xs flex justify-between items-center bg-slate-50/50">
+                      <div>
+                        <div className="font-extrabold text-slate-900">{s.name}</div>
+                        <div className="text-[11px] text-slate-500">{s.cinsiyet === 'kiz' ? '👩 Kız' : '👨 Erkek'} • {s.kat}. Kat - Oda {s.oda}</div>
+                        <div className="text-[11px] font-mono text-slate-600 mt-0.5">{s.anneTel}</div>
+                      </div>
+                      <button onClick={() => handleDeleteStudent(s.id)} className="text-rose-600 p-1.5 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ===================================================================
-            SEKME 2: BELLETMEN YÖNETİMİ VE EXCEL DOSYASI (.XLSX) İLE TOPLU YÜKLEME
+            SEKME 2: BELLETMEN EXCEL YÜKLEME ÖRNEĞİ VE FORMU
         =================================================================== */}
         {activeTab === 'belletmen' && (
           <div className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-              {/* EXCEL DOSYASI İLE TOPLU BELLETMEN YÜKLEME */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <h2 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Excel Dosyası (.xlsx) ile Belletmen Yükle
+            <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
+                    <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Belletmen Excel Yükleme Örneği (Sütun Sırası)
                   </h2>
-                  <button
-                    type="button"
-                    onClick={downloadBelletmenTemplate}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Örnek Excel İndir (.xlsx)
-                  </button>
-                </div>
-
-                <div className="p-4 bg-emerald-50/60 border-2 border-dashed border-emerald-300 rounded-2xl text-center space-y-2.5">
-                  <input
-                    ref={belletmenFileRef}
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={handleBelletmenExcelUpload}
-                    className="hidden"
-                    id="belletmen-excel-input"
-                  />
-                  <label
-                    htmlFor="belletmen-excel-input"
-                    className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm cursor-pointer transition-all min-h-[46px]"
-                  >
-                    <FolderUp className="w-4 h-4" />
-                    {loading ? 'Excel Dosyası Yükleniyor...' : 'Bilgisayardan / Telefondan Excel Dosyası Seç (.xlsx / .xls)'}
-                  </label>
-                  <p className="text-[11px] text-slate-500">
-                    Sütun Sırası: <code>Ad Soyad | erkek/kadin | Branş | Telefon | Şifre</code>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Belletmen öğretmenlerinizi Excel ile toplu yüklerken kullanacağınız örnek tablo yapısı:
                   </p>
                 </div>
-
-                <div className="space-y-2 pt-1">
-                  <label className="block text-[11px] font-bold text-slate-500">
-                    Veya Excel tablosundan kopyalayıp aşağıya yapıştırın:
-                  </label>
-                  <textarea rows={3} value={belletmenCsv} onChange={(e) => setBelletmenCsv(e.target.value)} className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono bg-slate-50" />
-                  <button onClick={handleBulkAddBelletmen} disabled={loading} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer flex justify-center gap-2">
-                    <Upload className="w-3.5 h-3.5" /> Yapıştırılan Metni Aktar
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={downloadBelletmenTemplate} className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-3.5 py-2 rounded-xl cursor-pointer">
+                    <Download className="w-4 h-4" /> Örnek Excel (.xlsx) İndir
+                  </button>
+                  <button type="button" onClick={handleLoadSampleBelletmen} disabled={loading} className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl cursor-pointer">
+                    <Sparkles className="w-4 h-4" /> Tek Tıkla Bu Örneği Sisteme Yükle
                   </button>
                 </div>
               </div>
 
-              {/* TEKİL BELLETMEN EKLEME */}
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3.5">
-                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-indigo-600" /> Tekil Belletmen Ekle
-                </h2>
-                <form onSubmit={handleAddBelletmen} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <input type="text" required placeholder="Ad Soyad" value={bName} onChange={(e) => setBName(e.target.value)} className="border rounded-xl px-3 py-3 text-base sm:text-xs font-semibold min-h-[44px]" />
-                  <select value={bCinsiyet} onChange={(e) => setBCinsiyet(e.target.value as 'erkek' | 'kadin')} className="border rounded-xl px-3 py-3 text-base sm:text-xs font-bold bg-white min-h-[44px]">
-                    <option value="erkek">👨 Erkek Belletmen</option>
-                    <option value="kadin">👩 Kadın Belletmen</option>
-                  </select>
-                  <input type="text" placeholder="Branş" value={bBrans} onChange={(e) => setBBrans(e.target.value)} className="border rounded-xl px-3 py-3 text-base sm:text-xs min-h-[44px]" />
-                  <input type="tel" placeholder="Telefon (0541...)" value={bPhone} onChange={(e) => setBPhone(e.target.value)} className="border rounded-xl px-3 py-3 text-base sm:text-xs font-mono min-h-[44px]" />
-                  <input type="text" required placeholder="Giriş Şifresi" value={bPassword} onChange={(e) => setBPassword(e.target.value)} className="sm:col-span-2 border border-indigo-200 bg-indigo-50/40 rounded-xl px-3 py-3 text-base sm:text-xs font-mono font-bold min-h-[44px]" />
-                  <button type="submit" className="sm:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold cursor-pointer min-h-[46px]">
-                    Belletmeni Sisteme Kaydet
+              <div className="overflow-x-auto border border-emerald-200 rounded-xl">
+                <table className="w-full text-[11px] border-collapse text-left">
+                  <thead>
+                    <tr className="bg-emerald-700 text-white font-bold">
+                      <th className="p-2 border-r border-emerald-600">A: Ad Soyad</th>
+                      <th className="p-2 border-r border-emerald-600">B: Cinsiyet (erkek/kadin)</th>
+                      <th className="p-2 border-r border-emerald-600">C: Branş</th>
+                      <th className="p-2 border-r border-emerald-600">D: Telefon (WhatsApp Şifre İçin)</th>
+                      <th className="p-2">E: Giriş Şifresi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-100 bg-emerald-50/30 font-mono">
+                    {SAMPLE_BELLETMEN_ROWS.map((row, i) => (
+                      <tr key={i}>
+                        <td className="p-2 font-sans font-bold text-slate-800 border-r border-emerald-100">{row.name}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.cinsiyet}</td>
+                        <td className="p-2 font-sans border-r border-emerald-100">{row.brans}</td>
+                        <td className="p-2 border-r border-emerald-100">{row.phone}</td>
+                        <td className="p-2 font-bold text-indigo-700">{row.password}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 bg-emerald-50/70 border-2 border-dashed border-emerald-300 rounded-2xl flex flex-col justify-center items-center text-center space-y-2">
+                  <input ref={belletmenFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleBelletmenExcelUpload} className="hidden" id="belletmen-excel-input" />
+                  <label htmlFor="belletmen-excel-input" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl cursor-pointer min-h-[46px]">
+                    <FolderUp className="w-4 h-4" /> Belletmen Excel Dosyası Seç (.xlsx / .xls)
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <textarea rows={2} value={belletmenCsv} onChange={(e) => setBelletmenCsv(e.target.value)} className="w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono bg-slate-50" />
+                  <button onClick={handleBulkAddBelletmen} disabled={loading} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer">
+                    Yapıştırılan Belletmen Listesini Aktar
                   </button>
-                </form>
+                </div>
               </div>
             </div>
 
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
-              <h2 className="text-sm font-bold text-slate-900 mb-4">Kayıtlı Belletmenler & Şifre Görme / Değiştirme ({belletmenler.length})</h2>
+              <h2 className="text-sm font-bold text-slate-900 mb-4">Kayıtlı Belletmenler & Şifre Yönetimi ({belletmenler.length})</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {belletmenler.map((b) => {
                   const isShown = !!visiblePasswords[b.id];
@@ -669,7 +742,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* ===================================================================
-            SEKME 3: AYLIK NÖBET LİSTESİ (OTOMATİK + EXCEL DOSYASI İLE YÜKLEME)
+            SEKME 3: AYLIK NÖBET EXCEL ÖRNEĞİ VE OTOMATİK ATAMA
         =================================================================== */}
         {activeTab === 'nobet' && (
           <div className="space-y-4 sm:space-y-6">
@@ -680,53 +753,58 @@ export default function AdminDashboardPage() {
                 </h2>
                 <p className="text-xs text-indigo-200">Seçilen ayın tüm günlerine 2 Erkek + 2 Kadın belletmeni sırayla otomatik dağıtır.</p>
               </div>
-              <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2">
-                <input type="month" value={nobetAySecim} onChange={(e) => setNobetAySecim(e.target.value)} className="bg-white text-slate-900 font-bold text-xs px-3 py-2.5 rounded-xl min-h-[42px]" />
-                <button onClick={handleAutoGenerateMonth} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-4 py-2.5 rounded-xl cursor-pointer min-h-[42px]">
+              <div className="flex items-center gap-2">
+                <input type="month" value={nobetAySecim} onChange={(e) => setNobetAySecim(e.target.value)} className="bg-white text-slate-900 font-bold text-xs px-3 py-2.5 rounded-xl" />
+                <button onClick={handleAutoGenerateMonth} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-4 py-2.5 rounded-xl cursor-pointer">
                   Tüm Ayı Otomatik Doldur
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900">Excel Dosyası (.xlsx) ile Aylık Nöbet Yükle</h3>
-                  <button type="button" onClick={downloadNobetTemplate} className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 cursor-pointer">
-                    <Download className="w-3 h-3 inline mr-1" /> Şablon İndir
+            <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Aylık Nöbet Excel Yükleme Örneği
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={downloadNobetTemplate} className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100 px-3 py-1.5 rounded-xl cursor-pointer">
+                    <Download className="w-3.5 h-3.5" /> Örnek Nöbet Excel (.xlsx) İndir
+                  </button>
+                  <button type="button" onClick={handleLoadSampleNobet} className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 px-3 py-1.5 rounded-xl cursor-pointer">
+                    <Sparkles className="w-3.5 h-3.5" /> Tek Tıkla Örnek Nöbetleri Yükle
                   </button>
                 </div>
-                <input ref={nobetFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleNobetExcelUpload} className="hidden" id="nobet-excel-input" />
-                <label htmlFor="nobet-excel-input" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl cursor-pointer">
-                  <FolderUp className="w-4 h-4" /> Nöbet Excel Dosyası Seç (.xlsx)
-                </label>
-                <textarea rows={3} value={nobetCsv} onChange={(e) => setNobetCsv(e.target.value)} className="w-full border rounded-xl p-2.5 text-xs font-mono bg-slate-50" />
-                <button onClick={handleBulkMonthlyDuty} className="w-full bg-slate-800 text-white py-2.5 rounded-xl text-xs font-bold cursor-pointer">
-                  Yapıştırılan Nöbet Listesini Aktar
-                </button>
               </div>
 
-              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-3.5">
-                <h3 className="text-sm font-bold text-slate-900">Tekil Gün Nöbeti Ata</h3>
-                <form onSubmit={handleAddSingleDutyDay} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                  <input type="date" value={nTarih} onChange={(e) => setNTarih(e.target.value)} className="sm:col-span-2 border rounded-xl px-3 py-2.5 font-bold min-h-[44px]" />
-                  <select value={nErkek1} onChange={(e) => setNErkek1(e.target.value)} className="border rounded-xl px-2.5 py-2.5 bg-white min-h-[44px]">
-                    {erkekBelletmenList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                  <select value={nErkek2} onChange={(e) => setNErkek2(e.target.value)} className="border rounded-xl px-2.5 py-2.5 bg-white min-h-[44px]">
-                    {erkekBelletmenList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                  <select value={nKadin1} onChange={(e) => setNKadin1(e.target.value)} className="border rounded-xl px-2.5 py-2.5 bg-white min-h-[44px]">
-                    {kadinBelletmenList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                  <select value={nKadin2} onChange={(e) => setNKadin2(e.target.value)} className="border rounded-xl px-2.5 py-2.5 bg-white min-h-[44px]">
-                    {kadinBelletmenList.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                  <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-bold cursor-pointer min-h-[46px]">
-                    <Save className="w-4 h-4 inline mr-1" /> Günü Kaydet
-                  </button>
-                </form>
+              <div className="overflow-x-auto border border-emerald-200 rounded-xl">
+                <table className="w-full text-[11px] border-collapse text-left">
+                  <thead>
+                    <tr className="bg-emerald-700 text-white font-bold">
+                      <th className="p-2 border-r border-emerald-600">A: Tarih (YYYY-AA-GG)</th>
+                      <th className="p-2 border-r border-emerald-600">B: 1. Erkek Belletmen</th>
+                      <th className="p-2 border-r border-emerald-600">C: 2. Erkek Belletmen</th>
+                      <th className="p-2 border-r border-emerald-600">D: 1. Kadın Belletmen</th>
+                      <th className="p-2">E: 2. Kadın Belletmen</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-100 bg-emerald-50/30">
+                    {SAMPLE_NOBET_ROWS.map((r, i) => (
+                      <tr key={i}>
+                        <td className="p-2 font-mono font-bold border-r border-emerald-100">{r.tarih}</td>
+                        <td className="p-2 border-r border-emerald-100 text-blue-800 font-semibold">{r.erkek1}</td>
+                        <td className="p-2 border-r border-emerald-100 text-blue-800 font-semibold">{r.erkek2}</td>
+                        <td className="p-2 border-r border-emerald-100 text-rose-800 font-semibold">{r.kadin1}</td>
+                        <td className="p-2 text-rose-800 font-semibold">{r.kadin2}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+
+              <input ref={nobetFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleNobetExcelUpload} className="hidden" id="nobet-excel-input" />
+              <label htmlFor="nobet-excel-input" className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl cursor-pointer">
+                <FolderUp className="w-4 h-4" /> Nöbet Excel Dosyası Seç (.xlsx / .xls)
+              </label>
             </div>
 
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
