@@ -56,8 +56,21 @@ export default function BelletmenPage() {
     try {
       const ts = Date.now();
       const url = rol ? `/api/pansiyon?cinsiyet=${rol}&t=${ts}` : `/api/pansiyon?t=${ts}`;
-      const res = await fetch(url, { cache: 'no-store' });
-      const data = await res.json();
+      // tunnel_mobile_fallback: Önce doğrudan canlı tünelden çekmeyi dene, ardından API'yi kullan
+      let data: any = null;
+      try {
+        const rTunnel = await fetch('https://quantitative-julian-governor-scheme.trycloudflare.com/store?t=' + ts, { cache: 'no-store' });
+        if (rTunnel.ok) {
+          const dTunnel = await rTunnel.json();
+          if (dTunnel.success && dTunnel.store && Array.isArray(dTunnel.store.students)) {
+            data = dTunnel;
+          }
+        }
+      } catch {}
+      if (!data) {
+        const res = await fetch(url, { cache: 'no-store' });
+        data = await res.json();
+      }
 
       if (data.success && data.store) {
         let serverStudents: Student[] = data.store.students || [];

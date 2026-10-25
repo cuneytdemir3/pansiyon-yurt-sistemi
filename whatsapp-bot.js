@@ -1,111 +1,126 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const http = require('http');
+const express = require('express');
+const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 
-const possiblePaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-];
+const app = express();
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'OPTIONS'] }));
+app.use(express.json({ limit: '15mb' }));
 
-let executablePath = undefined;
-for (const path of possiblePaths) {
-    if (fs.existsSync(path)) {
-        executablePath = path;
-        break;
+// KALICI VERİTABANI DOSYASI (Bilgisayar ve Mobil Cihazlar İçin Ortak Kaynak)
+const DATA_FILE = path.join(__dirname, 'pansiyon_kalici_veri.json');
+
+function readPersistentStore() {
+    try {
+        if (fs.existsSync(DATA_FILE)) {
+            return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        }
+    } catch (e) {
+        console.error('Veri okuma hatası:', e.message);
+    }
+    return null;
+}
+
+function writePersistentStore(store) {
+    try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8');
+        return true;
+    } catch (e) {
+        console.error('Veri yazma hatası:', e.message);
+        return false;
     }
 }
 
+// MOBİL VE WEB SENKRONİZASYON UÇ NOKTALARI (/store)
+app.get('/store', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    const store = readPersistentStore();
+    res.json({ success: true, store });
+});
+
+app.post('/store', (req, res) => {
+    const { store } = req.body;
+    if (store) {
+        writePersistentStore(store);
+        console.log(`🔄 [CANLI SENKRONİZASYON] Veritabanı güncellendi (${store.students?.length || 0} Öğrenci, ${store.belletmenler?.length || 0} Belletmen)`);
+    }
+    res.json({ success: true });
+});
+
+let isReady = false;
+
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
     puppeteer: {
-        executablePath: executablePath,
         headless: false,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
-let isReady = false;
-
 client.on('qr', (qr) => {
+    console.log('\n================================================');
+    console.log('📱 LÜTFEN AÇILAN PENCEREDEKİ VEYA AŞAĞIDAKİ QR KODU OKUTUN:');
+    console.log('================================================\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
     isReady = true;
-    console.log('\n✅ [BAŞARILI] WhatsApp Botu Bağlandı ve Mesaj Göndermeye Hazır!\n');
+    console.log('\n✅ [BAŞARILI] WhatsApp Botu ve Mobil Senkronizasyon Sunucusu Hazır!\n');
 });
 
-client.on('disconnected', () => {
+client.on('authenticated', () => {
+    console.log('🔐 WhatsApp oturumu doğrulandı.');
+});
+
+client.on('disconnected', (reason) => {
     isReady = false;
+    console.log('⚠️ WhatsApp bağlantısı koptu:', reason);
 });
 
-client.initialize();
+function formatTurkishPhone(rawPhone) {
+    let cleaned = String(rawPhone || '').replace(/\D/g, '');
+    if (cleaned.startsWith('0090')) cleaned = cleaned.substring(2);
+    else if (cleaned.length === 11 && cleaned.startsWith('0')) cleaned = '90' + cleaned.substring(1);
+    else if (cleaned.length === 10 && !cleaned.startsWith('90')) cleaned = '90' + cleaned;
+    return cleaned;
+}
 
-const server = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+app.get('/status', (req, res) => {
+    res.json({ ready: isReady });
+});
 
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
-    }
-
-    if (req.method === 'POST' && req.url === '/send-otp') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', async () => {
-            try {
-                if (!isReady) {
-                    res.writeHead(503, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, message: 'WhatsApp Web henüz hazır değil.' }));
-                    return;
-                }
-
-                const { phone, code, customMessage } = JSON.parse(body);
-                let cleanPhone = (phone || '').replace(/\D/g, '');
-                if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
-                if (!cleanPhone.startsWith('90')) cleanPhone = '90' + cleanPhone;
-
-                let message = customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nVeli Giriş Kodunuz: *${code}*`;
-
-                console.log(`⏳ [GÖNDERİLİYOR] Hedef: ${cleanPhone}`);
-
-                let targetChatId = `${cleanPhone}@c.us`;
-                if (client.info && client.info.wid && client.info.wid.user === cleanPhone) {
-                    targetChatId = client.info.wid._serialized;
-                } else {
-                    const numberDetails = await client.getNumberId(cleanPhone);
-                    if (!numberDetails) {
-                        res.writeHead(404, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: false, message: `Numara (${cleanPhone}) WhatsApp'ta bulunamadı.` }));
-                        return;
-                    }
-                    targetChatId = numberDetails._serialized;
-                }
-
-                await client.sendMessage(targetChatId, message, { sendSeen: false });
-                console.log(`✅ [MESAJ İLETİLDİ] -> ${cleanPhone}`);
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: 'WhatsApp bildirimi başarıyla gönderildi.' }));
-            } catch (err) {
-                console.error('❌ Hata:', err.message);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, message: err.message }));
-            }
+app.post('/send-otp', async (req, res) => {
+    const { phone, code, customMessage } = req.body;
+    if (!isReady) {
+        return res.status(503).json({
+            success: false,
+            message: 'WhatsApp Botu henüz hazır değil. Lütfen QR kodu okutun.'
         });
-    } else {
-        res.writeHead(404);
-        res.end();
+    }
+
+    try {
+        const formatted = formatTurkishPhone(phone);
+        const numberDetails = await client.getNumberId(formatted);
+        const targetChatId = numberDetails ? numberDetails._serialized : `${formatted}@c.us`;
+
+        const text = customMessage
+            ? customMessage
+            : `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nVeli Giriş Kodunuz: *${code}*\n\nBu kodu kimseyle paylaşmayınız.`;
+
+        await client.sendMessage(targetChatId, text);
+        console.log(`📩 [WHATSAPP GÖNDERİLDİ] -> ${formatted}`);
+        return res.json({ success: true, message: 'Mesaj başarıyla iletildi.' });
+    } catch (err) {
+        console.error('❌ [WHATSAPP HATASI]:', err.message);
+        return res.status(500).json({ success: false, message: err.message });
     }
 });
 
-server.listen(3001, () => {
-    console.log('🚀 [BOT SUNUCUSU] http://localhost:3001 adresinde dinleniyor...');
+const PORT = 3001;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 WhatsApp & Mobil Veri Köprüsü http://127.0.0.1:${PORT} üzerinde çalışıyor.`);
+    client.initialize();
 });

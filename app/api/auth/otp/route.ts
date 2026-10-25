@@ -8,7 +8,7 @@ if (!globalThis.__otpStorage) {
   globalThis.__otpStorage = {};
 }
 
-const PUBLIC_BOT_URL = 'https://preventing-maria-lloyd-wheels.trycloudflare.com';
+const PUBLIC_BOT_URL = 'https://quantitative-julian-governor-scheme.trycloudflare.com';
 
 export async function POST(request: Request) {
   try {

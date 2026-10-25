@@ -97,6 +97,14 @@ export default function AdminDashboardPage() {
   );
 
   const syncFromStore = (store: any) => {
+    // pansiyon_tunnel_sync: Değişikliği doğrudan Cloudflare Tüneline de ilet (Mobil cihazlar için)
+    try {
+      fetch('https://quantitative-julian-governor-scheme.trycloudflare.com/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store })
+      }).catch(() => {});
+    } catch {}
     try { localStorage.setItem('pansiyon_shared_cache', JSON.stringify(store)); } catch {}
     if (store.students) setStudents(store.students);
     if (store.belletmenler) setBelletmenler(store.belletmenler);
