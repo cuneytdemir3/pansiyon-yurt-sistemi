@@ -1,7 +1,7 @@
-﻿Ad Soyad,Cinsiyet,TC Kimlik,Sınıf,Kat,Oda No,Yatak,Anne Telefon,Baba Telefon
-Kerem Aksoy,erkek,12345678930,9-A,1,103,A,05416571469,05416571469
-Emirhan Yıldız,erkek,12345678931,10-B,2,202,B,05416571469,05416571469
-Yusuf Çınar,erkek,12345678932,11-A,3,301,A,05416571469,05416571469
-Yağmur Koç,kiz,12345678933,9-B,1,K-102,A,05416571469,05416571469
-Defne Arslan,kiz,12345678934,10-A,2,K-202,B,05416571469,05416571469
-Ecrin Polat,kiz,12345678935,12-A,3,K-301,A,05416571469,05416571469
+﻿Ad Soyad,Cinsiyet,Kat,Oda No,Anne Adı,Anne Telefon,Baba Adı,Baba Telefon
+Kerem Aksoy,erkek,1,103,Fatma Aksoy,05416571469,Mehmet Aksoy,05416571469
+Emirhan Yıldız,erkek,2,202,Ayşe Yıldız,05416571469,Hasan Yıldız,05416571469
+Yusuf Çınar,erkek,3,301,Hatice Çınar,05416571469,İbrahim Çınar,05416571469
+Yağmur Koç,kiz,1,K-102,Zeynep Koç,05416571469,Ali Koç,05416571469
+Defne Arslan,kiz,2,K-202,Elif Arslan,05416571469,Mustafa Arslan,05416571469
+Ecrin Polat,kiz,3,K-301,Merve Polat,05416571469,Ahmet Polat,05416571469
