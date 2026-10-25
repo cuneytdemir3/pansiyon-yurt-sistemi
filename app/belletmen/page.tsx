@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2,
-  Phone, Printer, X, LogOut, UserCheck, Lock, RefreshCw
+  Phone, Printer, X, LogOut, UserCheck, Lock, KeyRound, ShieldCheck
 } from 'lucide-react';
 
 interface Student {
@@ -37,7 +37,7 @@ export default function BelletmenPage() {
   const [loginError, setLoginError] = useState<string>('');
 
   const [selectedKat, setSelectedKat] = useState<number>(1);
-  const [tarih, setTarih] = useState<string>('2026-10-24');
+  const [tarih, setTarih] = useState<string>('2026-10-25');
   const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
@@ -48,32 +48,44 @@ export default function BelletmenPage() {
   const [erkekBelletmen2, setErkekBelletmen2] = useState('Ali BEY');
   const [kizBelletmen1, setKizBelletmen1] = useState('Ayşenur KAYA');
   const [kizBelletmen2, setKizBelletmen2] = useState('Fatma YILMAZ');
-  const [nobetNotu, setNobetNotu] = useState('Erkek ve Kız pansiyonu akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı.');
+  const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
 
-  const loadData = async () => {
+  // SADECE İLGİLİ CİNSİYETİN VERİSİNİ SUNUCUDAN ÇEK
+  const loadRoleSpecificData = async (rol: 'erkek' | 'kiz' | null) => {
     try {
-      const res = await fetch('/api/pansiyon');
+      const url = rol ? `/api/pansiyon?cinsiyet=${rol}` : '/api/pansiyon';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.store) {
-        setStudents(data.store.students || []);
-        setLeaves(data.store.leaves || []);
+        if (rol) {
+          // Ekstra güvenlik: Sunucudan zaten filtrelenmiş gelir, istemcide de kesin filtre uygula
+          const strictStudents = (data.store.students || []).filter((s: Student) => s.cinsiyet === rol);
+          setStudents(strictStudents);
+          setLeaves(data.store.leaves || []);
+        } else {
+          setStudents([]);
+        }
         const bList = data.store.belletmenler || [];
         setBelletmenler(bList);
         setAylikNobetler(data.store.aylikNobetler || []);
 
         const firstErkek = bList.find((b: any) => b.cinsiyet === 'erkek');
         const firstKadin = bList.find((b: any) => b.cinsiyet === 'kadin');
-        if (firstErkek) setSecilenErkekId(firstErkek.id);
-        if (firstKadin) setSecilenKadinId(firstKadin.id);
+        if (firstErkek && !secilenErkekId) setSecilenErkekId(firstErkek.id);
+        if (firstKadin && !secilenKadinId) setSecilenKadinId(firstKadin.id);
       }
     } catch {}
   };
 
   useEffect(() => {
-    loadData();
-    const savedRole = localStorage.getItem('belletmen_rol');
+    const savedRole = localStorage.getItem('belletmen_rol') as 'erkek' | 'kiz' | null;
+    const savedName = localStorage.getItem('belletmen_ad') || '';
     if (savedRole === 'erkek' || savedRole === 'kiz') {
       setAktifRol(savedRole);
+      setAktifBelletmenAd(savedName);
+      loadRoleSpecificData(savedRole);
+    } else {
+      loadRoleSpecificData(null);
     }
   }, []);
 
@@ -89,6 +101,7 @@ export default function BelletmenPage() {
 
   const handleLogin = async (rol: 'erkek' | 'kiz') => {
     setLoginError('');
+    setFeedback(null);
     const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
     const targetPass = rol === 'erkek' ? erkekSifre : kadinSifre;
 
@@ -99,33 +112,42 @@ export default function BelletmenPage() {
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      setAktifRol(rol);
-      localStorage.setItem('belletmen_rol', rol);
+      // Giriş yapan öğretmenin cinsiyeti ile seçtiği kutu uyumlu mu kontrol et
+      const allowedRole: 'erkek' | 'kiz' = data.belletmen.cinsiyet === 'kadin' ? 'kiz' : 'erkek';
+      setAktifRol(allowedRole);
       setAktifBelletmenAd(data.belletmen.name);
+      localStorage.setItem('belletmen_rol', allowedRole);
+      localStorage.setItem('belletmen_ad', data.belletmen.name);
+      await loadRoleSpecificData(allowedRole);
     } else {
       setLoginError(data.message || 'Şifre hatalı!');
     }
   };
 
-  // ŞİFREMİ UNUTTUM FONKSİYONU
   const handleForgotPassword = async (rol: 'erkek' | 'kiz') => {
     setLoginError('');
     setFeedback(null);
     const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
-    const found = belletmenler.find(b => b.id === targetId);
+    const found = belletmenler.find((b) => b.id === targetId);
 
     if (!found) {
       setLoginError('Lütfen listeden isminizi seçin.');
       return;
     }
     if (!found.phone || found.phone.length < 10) {
-      setLoginError('Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor. Lütfen idareye başvurun.');
+      setLoginError('Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor.');
       return;
     }
 
     setFeedback({ type: 'success', text: 'Şifreniz WhatsApp üzerinden gönderiliyor, lütfen bekleyin...' });
 
     try {
+      await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log_forgot_password', id: found.id })
+      });
+
       const res = await fetch('/api/belletmen/bildirim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,14 +159,12 @@ export default function BelletmenPage() {
         })
       });
       const data = await res.json();
-      
+
       if (res.ok && data.success) {
-        setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
+        setFeedback({ type: 'success', text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp numaranıza gönderildi!` });
       } else {
-        // Tünel yedeği (Fallback)
         let directSuccess = false;
-        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi giriş şifreniz: *${found.password}*\n\nLütfen giriş yaptıktan sonra şifrenizi güncelleyiniz.`;
-        
+        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi kayıtlı giriş şifreniz: *${found.password}*`;
         for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
           if (!directUrl) continue;
           try {
@@ -156,13 +176,13 @@ export default function BelletmenPage() {
             const d2 = await r2.json();
             if (r2.ok && d2.success) {
               directSuccess = true;
-              setFeedback({ type: 'success', text: `✅ Şifreniz kayıtlı WhatsApp numaranıza (*** ** ${found.phone.slice(-2)}) başarıyla gönderildi!` });
+              setFeedback({ type: 'success', text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp numaranıza gönderildi!` });
               break;
             }
           } catch {}
         }
         if (!directSuccess) {
-          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı. Botun açık olduğundan emin olun.' });
+          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı.' });
         }
       }
     } catch {
@@ -173,7 +193,9 @@ export default function BelletmenPage() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('belletmen_rol');
+    localStorage.removeItem('belletmen_ad');
     setAktifRol(null);
+    setStudents([]);
     window.location.href = '/';
   };
 
@@ -182,13 +204,15 @@ export default function BelletmenPage() {
     return found ? `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})` : undefined;
   };
 
-  const enrichedStudents = students.map((s) => {
-    const leaveTxt = getActiveLeaveText(s.id);
-    return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
-  });
+  // KESİN CİNSİYET FİLTRESİ: Erkek belletmen sadece 'erkek', Kadın belletmen sadece 'kiz' öğrencileri görebilir!
+  const strictlyIsolatedStudents = students
+    .filter((s) => s.cinsiyet === aktifRol)
+    .map((s) => {
+      const leaveTxt = getActiveLeaveText(s.id);
+      return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
+    });
 
-  const roleFilteredStudents = enrichedStudents.filter((s) => s.cinsiyet === aktifRol);
-  const katStudents = roleFilteredStudents.filter((s) => s.kat === selectedKat);
+  const katStudents = strictlyIsolatedStudents.filter((s) => s.kat === selectedKat);
 
   const katMevcudu = katStudents.length;
   const varSayisi = katStudents.filter((s) => s.status === 'var').length;
@@ -209,11 +233,11 @@ export default function BelletmenPage() {
   };
 
   const handleStatusChange = (id: string, newStatus: 'var' | 'yok') => {
-    syncAttendance(students.map((s) => (s.id === id ? { ...s, status: newStatus } : s)));
+    syncAttendance(students.map((s) => (s.id === id && s.cinsiyet === aktifRol ? { ...s, status: newStatus } : s)));
   };
 
   const handlePhoneChange = (id: string, field: 'anneTel' | 'babaTel', value: string) => {
-    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+    setStudents((prev) => prev.map((s) => (s.id === id && s.cinsiyet === aktifRol ? { ...s, [field]: value } : s)));
   };
 
   const handleTumunuVarYap = () => {
@@ -225,7 +249,7 @@ export default function BelletmenPage() {
       return s;
     });
     syncAttendance(updated);
-    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm öğrenciler 'Var' yapıldı.` });
+    setFeedback({ type: 'success', text: `✅ ${selectedKat}. Kattaki izinsiz tüm ${aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenciler 'Var' yapıldı.` });
   };
 
   const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
@@ -282,10 +306,10 @@ export default function BelletmenPage() {
         action: 'add_duty_log',
         tarih,
         seans: seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)',
-        erkekBelletmen1,
-        erkekBelletmen2,
-        kizBelletmen1,
-        kizBelletmen2,
+        erkekBelletmen1: aktifRol === 'erkek' ? erkekBelletmen1 : '-',
+        erkekBelletmen2: aktifRol === 'erkek' ? erkekBelletmen2 : '-',
+        kizBelletmen1: aktifRol === 'kiz' ? kizBelletmen1 : '-',
+        kizBelletmen2: aktifRol === 'kiz' ? kizBelletmen2 : '-',
         notlar: nobetNotu,
       }),
     });
@@ -304,10 +328,10 @@ export default function BelletmenPage() {
               Prof. Dr. Mümtaz Turhan SBL Pansiyonu
             </span>
             <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 mt-2">
-              Nöbetçi Belletmen Girişi
+              Nöbetçi Belletmen Şifreli Giriş
             </h1>
             <p className="text-xs text-slate-500">
-              Erkek Belletmenler sadece <strong>Erkek Öğrencileri</strong>, Kadın Belletmenler sadece <strong>Kız Öğrencileri</strong> görüp yoklama alabilir.
+              Gizlilik kuralları gereği <strong>Erkek Belletmenler yalnızca Erkek Pansiyonunu</strong>, <strong>Kadın Belletmenler yalnızca Kız Pansiyonunu</strong> görebilir.
             </p>
           </div>
 
@@ -356,7 +380,9 @@ export default function BelletmenPage() {
                     />
                   </div>
                   <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('erkek')} className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
+                    <button type="button" onClick={() => handleForgotPassword('erkek')} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline cursor-pointer">
+                      <KeyRound className="w-3 h-3" /> Şifremi Unuttum (WhatsApp Gönder)
+                    </button>
                   </div>
                 </div>
               </div>
@@ -400,7 +426,9 @@ export default function BelletmenPage() {
                     />
                   </div>
                   <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('kiz')} className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer">Şifremi Unuttum (WhatsApp Gönder)</button>
+                    <button type="button" onClick={() => handleForgotPassword('kiz')} className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 hover:underline cursor-pointer">
+                      <KeyRound className="w-3 h-3" /> Şifremi Unuttum (WhatsApp Gönder)
+                    </button>
                   </div>
                 </div>
               </div>
@@ -413,47 +441,48 @@ export default function BelletmenPage() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-slate-100 text-xs">
+          <div className="flex justify-between items-center pt-3 border-t border-slate-100 text-xs">
             <a href="/" className="text-slate-600 font-bold hover:underline">← Ana Sayfaya Dön</a>
-            <a href="/admin" className="text-indigo-700 font-bold hover:underline">Yönetici Paneli →</a>
           </div>
         </div>
       </div>
     );
   }
 
-  const erkekOgrenciler = enrichedStudents.filter((s) => s.cinsiyet === 'erkek');
-  const kizOgrenciler = enrichedStudents.filter((s) => s.cinsiyet === 'kiz');
-  const tumYoklar = enrichedStudents.filter((s) => s.status === 'yok');
+  // Nöbet Defteri İçin YALNIZCA Aktif Belletmenin Kendi Cinsiyet Grubundaki Öğrenciler
+  const bolumYoklar = strictlyIsolatedStudents.filter((s) => s.status === 'yok');
+  const bolumIzinliler = strictlyIsolatedStudents.filter((s) => s.status === 'izinli');
 
   return (
     <div className="min-h-screen bg-slate-100 p-2.5 sm:p-6 pb-20">
       <div className="max-w-5xl mx-auto space-y-4 print:hidden">
 
+        {/* ÜST PANEL (Grup Değiştirme Kaldırıldı - Tam İzolasyon) */}
         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3.5">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="space-y-1">
-              <span className={`inline-block text-[11px] font-extrabold px-2.5 py-1 rounded-full ${aktifRol === 'erkek' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
-                {aktifRol === 'erkek'
-                  ? `👨 Nöbetçiler: ${erkekBelletmen1} & ${erkekBelletmen2}`
-                  : `👩 Nöbetçiler: ${kizBelletmen1} & ${kizBelletmen2}`}
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-block text-[11px] font-extrabold px-3 py-1 rounded-full ${aktifRol === 'erkek' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
+                  {aktifRol === 'erkek'
+                    ? `👨 Erkek Pansiyonu Nöbetçileri: ${erkekBelletmen1} & ${erkekBelletmen2}`
+                    : `👩 Kız Pansiyonu Nöbetçileri: ${kizBelletmen1} & ${kizBelletmen2}`}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {aktifRol === 'erkek' ? 'Yalnızca Erkek Öğrenciler Yetkisi' : 'Yalnızca Kız Öğrenciler Yetkisi'}
+                </span>
+              </div>
               <h1 className="text-base sm:text-xl font-extrabold text-slate-900">
-                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklaması
+                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklama Ekranı
               </h1>
             </div>
 
-            <div className="grid grid-cols-3 sm:flex items-center gap-2 w-full sm:w-auto">
-              <button onClick={() => setAktifRol(null)} className="flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 bg-slate-100 py-2.5 px-2.5 rounded-xl cursor-pointer min-h-[40px]">
-                <RefreshCw className="w-3.5 h-3.5 shrink-0" /> <span>Grup</span>
-              </button>
-              <a href="/admin" className="flex items-center justify-center text-[11px] sm:text-xs font-bold text-indigo-700 bg-indigo-50 py-2.5 px-2.5 rounded-xl border border-indigo-200 min-h-[40px]">
-                İdare
-              </a>
-              <button onClick={handleLogout} className="flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold text-white bg-rose-600 py-2.5 px-2.5 rounded-xl cursor-pointer min-h-[40px]">
-                <LogOut className="w-3.5 h-3.5 shrink-0" /> <span>Çıkış</span>
-              </button>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 py-2.5 px-4 rounded-xl cursor-pointer min-h-[42px]"
+            >
+              <LogOut className="w-4 h-4 shrink-0" /> Güvenli Çıkış Yap
+            </button>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
@@ -477,7 +506,7 @@ export default function BelletmenPage() {
             </div>
 
             <button onClick={() => setNobetDefteriAcik(true)} className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer min-h-[44px]">
-              <FileText className="w-4 h-4 shrink-0" /> Resmî Nöbet Defteri (PDF)
+              <FileText className="w-4 h-4 shrink-0" /> {aktifRol === 'erkek' ? 'Erkek Pansiyonu Nöbet Defteri (PDF)' : 'Kız Pansiyonu Nöbet Defteri (PDF)'}
             </button>
           </div>
         </div>
@@ -489,6 +518,7 @@ export default function BelletmenPage() {
           </div>
         )}
 
+        {/* KAT SEÇİMİ VE TÜMÜNÜ VAR YAP */}
         <div className="bg-white/95 backdrop-blur-md sticky top-2 z-20 rounded-2xl p-3 shadow-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           <div className="grid grid-cols-3 gap-1.5">
             {[1, 2, 3].map((kat) => (
@@ -499,19 +529,20 @@ export default function BelletmenPage() {
                   selectedKat === kat ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
                 }`}
               >
-                {kat}. Kat
+                {kat}. Kat ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'})
               </button>
             ))}
           </div>
 
-          <button onClick={handleTumunuVarYap} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-4 py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px]">
-            <CheckCircle2 className="w-4 h-4" /> Tümünü Var Yap
+          <button onClick={handleTumunuVarYap} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px]">
+            <CheckCircle2 className="w-4 h-4" /> Bu Kattaki Tümünü Var Yap
           </button>
         </div>
 
+        {/* ÖZET KARTLARI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
-            <div className="text-[11px] text-slate-500">Kat Mevcudu</div>
+            <div className="text-[11px] text-slate-500">{selectedKat}. Kat Mevcudu ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'})</div>
             <div className="text-xl font-extrabold text-slate-900 mt-0.5">{katMevcudu}</div>
           </div>
           <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200">
@@ -528,6 +559,7 @@ export default function BelletmenPage() {
           </div>
         </div>
 
+        {/* ODALAR VE ÖĞRENCİ KARTLARI */}
         {odalar.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
             Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır.
@@ -540,7 +572,7 @@ export default function BelletmenPage() {
                 <div key={odaNo} className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                   <div className={`${aktifRol === 'erkek' ? 'bg-slate-900' : 'bg-rose-950'} text-white px-4 py-3 flex items-center justify-between`}>
                     <div className="flex items-center gap-2 text-xs font-bold">
-                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo}
+                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo} ({aktifRol === 'erkek' ? 'Erkek Pansiyonu' : 'Kız Pansiyonu'})
                     </div>
                     <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full text-slate-100">
                       {odaOgrencileri.length} Öğrenci
@@ -619,21 +651,134 @@ export default function BelletmenPage() {
         )}
       </div>
 
+      {/* RESMÎ MEB NÖBET DEFTERİ MODAL (Yalnızca Aktif Belletmenin Kendi Bölümünü Gösterir!) */}
       {nobetDefteriAcik && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
               <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600 shrink-0" /> Resmî MEB Nöbet Defteri
+                <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
+                {aktifRol === 'erkek' ? 'Erkek Pansiyonu Resmî Nöbet Defteri' : 'Kız Pansiyonu Resmî Nöbet Defteri'}
               </h2>
-              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700 p-1">
+              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {/* Modal icerigi ayni birakildi... */}
-            <div className="flex justify-end gap-2.5 print:hidden">
-              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">Kapat</button>
-              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]"><Printer className="w-4 h-4" /> Kaydet ve Çıktı Al</button>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 print:hidden">
+              {aktifRol === 'erkek' ? (
+                <>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 mb-1">1. Nöbetçi Erkek Belletmen</label>
+                    <input type="text" value={erkekBelletmen1} onChange={(e) => setErkekBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 mb-1">2. Nöbetçi Erkek Belletmen</label>
+                    <input type="text" value={erkekBelletmen2} onChange={(e) => setErkekBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[11px] font-bold text-rose-800 mb-1">1. Nöbetçi Kadın Belletmen</label>
+                    <input type="text" value={kizBelletmen1} onChange={(e) => setKizBelletmen1(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-rose-800 mb-1">2. Nöbetçi Kadın Belletmen</label>
+                    <input type="text" value={kizBelletmen2} onChange={(e) => setKizBelletmen2(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white" />
+                  </div>
+                </>
+              )}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Günlük Nöbet Vukuat / Olay Notları</label>
+                <textarea rows={2} value={nobetNotu} onChange={(e) => setNobetNotu(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-white" />
+              </div>
+            </div>
+
+            <div className="border border-slate-300 p-4 sm:p-6 rounded-xl space-y-4 text-slate-900 print:border-none print:p-0">
+              <div className="text-center space-y-1 border-b-2 border-slate-800 pb-3">
+                <p className="text-xs font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</p>
+                <p className="text-xs sm:text-sm font-extrabold uppercase">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Müdürlüğü</p>
+                <p className="text-[11px] font-semibold uppercase text-slate-700">
+                  {aktifRol === 'erkek' ? 'ERKEK ÖĞRENCİ PANSİYONU' : 'KIZ ÖĞRENCİ PANSİYONU'} GÜNLÜK NÖBET TUTANAĞI ({tarih} - {seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'})
+                </p>
+              </div>
+
+              <div className="border border-slate-300 p-3 rounded-lg text-xs">
+                <div className={`font-bold border-b pb-1 mb-1.5 ${aktifRol === 'erkek' ? 'text-blue-900' : 'text-rose-900'}`}>
+                  {aktifRol === 'erkek' ? 'ERKEK PANSİYONU YOKLAMA ÖZETİ' : 'KIZ PANSİYONU YOKLAMA ÖZETİ'}
+                </div>
+                Toplam Kayıtlı: <strong>{strictlyIsolatedStudents.length}</strong> | Pansiyonda Mevcut (Var): <strong>{strictlyIsolatedStudents.filter(s => s.status === 'var').length}</strong> | Yoklamada Bulunmayan (Yok): <strong>{bolumYoklar.length}</strong> | İzinli: <strong>{bolumIzinliler.length}</strong>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-rose-600">
+                  1. Yoklamada Bulunmayan ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'}) Öğrenciler ({bolumYoklar.length})
+                </h4>
+                {bolumYoklar.length === 0 ? (
+                  <p className="text-xs italic pl-2">Yoklamada habersiz eksik öğrenci yoktur.</p>
+                ) : (
+                  <div className="space-y-1 text-xs">
+                    {bolumYoklar.map((s) => (
+                      <div key={s.id} className="border-b py-1 flex justify-between">
+                        <strong>{s.name} (Oda {s.oda} - Yatak {s.yatak})</strong>
+                        <span>Veli Tel: {s.anneTel}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-amber-500">
+                  2. İzinli ({aktifRol === 'erkek' ? 'Erkek' : 'Kız'}) Öğrenciler ({bolumIzinliler.length})
+                </h4>
+                {bolumIzinliler.length === 0 ? (
+                  <p className="text-xs italic pl-2">İzinli öğrenci yoktur.</p>
+                ) : (
+                  <div className="space-y-1 text-xs">
+                    {bolumIzinliler.map((s) => (
+                      <div key={s.id} className="border-b py-1 flex justify-between">
+                        <strong>{s.name} (Oda {s.oda})</strong>
+                        <span>{s.izinAciklama}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-indigo-600">
+                  3. Nöbetçi Belletmenler Vukuat ve Değerlendirme Notu
+                </h4>
+                <div className="p-2.5 border border-slate-300 rounded-lg text-xs min-h-[50px]">
+                  {nobetNotu}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 pt-4 text-center text-xs">
+                {aktifRol === 'erkek' ? (
+                  <>
+                    <div><p className="font-bold">1. Nöbetçi Erkek Belletmen</p><p className="mt-1">{erkekBelletmen1}</p><p className="mt-5 text-slate-400">İmza</p></div>
+                    <div><p className="font-bold">2. Nöbetçi Erkek Belletmen</p><p className="mt-1">{erkekBelletmen2}</p><p className="mt-5 text-slate-400">İmza</p></div>
+                  </>
+                ) : (
+                  <>
+                    <div><p className="font-bold">1. Nöbetçi Kadın Belletmen</p><p className="mt-1">{kizBelletmen1}</p><p className="mt-5 text-slate-400">İmza</p></div>
+                    <div><p className="font-bold">2. Nöbetçi Kadın Belletmen</p><p className="mt-1">{kizBelletmen2}</p><p className="mt-5 text-slate-400">İmza</p></div>
+                  </>
+                )}
+                <div><p className="font-bold">Müdür Yardımcısı</p><p className="mt-1">Pansiyon İdaresi</p><p className="mt-5 text-slate-400">İmza / Mühür</p></div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2.5 print:hidden">
+              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">
+                Kapat
+              </button>
+              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
+                <Printer className="w-4 h-4" /> Kaydet ve Resmî PDF Çıktısı Al
+              </button>
             </div>
           </div>
         </div>

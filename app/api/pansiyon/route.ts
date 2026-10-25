@@ -8,7 +8,7 @@ export interface DutyLogRecord { id: string; tarih: string; seans: string; erkek
 export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
 
 declare global {
-  var __pansiyonStoreV11: {
+  var __pansiyonStoreV12: {
     students: StudentRecord[];
     belletmenler: BelletmenRecord[];
     aylikNobetler: MonthlyDutyDay[];
@@ -18,8 +18,8 @@ declare global {
   } | undefined;
 }
 
-if (!globalThis.__pansiyonStoreV11) {
-  globalThis.__pansiyonStoreV11 = {
+if (!globalThis.__pansiyonStoreV12) {
+  globalThis.__pansiyonStoreV12 = {
     students: [
       { id: '1', name: 'Ahmet Yılmaz', cinsiyet: 'erkek', tc: '12345678901', sinif: '10-A', kat: 1, oda: '101', yatak: 'A', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
       { id: '2', name: 'Mehmet Demir', cinsiyet: 'erkek', tc: '12345678902', sinif: '11-B', kat: 1, oda: '101', yatak: 'B', anneTel: '05416571469', babaTel: '05416571469', status: 'izinli' },
@@ -52,7 +52,7 @@ if (!globalThis.__pansiyonStoreV11) {
     ],
     dutyLogs: [],
     auditLogs: [
-      { id: 'log1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Sistem Başlatıldı', detay: 'Şifre doğrulama ve WhatsApp şifre hatırlatma servisi aktif.', tur: 'bilgi' }
+      { id: 'log1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Gizlilik İzolasyonu Aktif', detay: 'Erkek ve Kız pansiyonu veri erişim sınırları kilitlendi.', tur: 'bilgi' }
     ],
   };
 }
@@ -66,24 +66,49 @@ const addLog = (store: any, kullanici: string, islem: string, detay: string, tur
   if (store.auditLogs.length > 100) store.auditLogs.pop();
 };
 
-export async function GET() {
-  return NextResponse.json({ success: true, store: globalThis.__pansiyonStoreV11 });
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const cinsiyetFilter = searchParams.get('cinsiyet'); // 'erkek' veya 'kiz'
+  const store = globalThis.__pansiyonStoreV12!;
+
+  // Eğer belletmen kendi rolüyle veri istediyse SADECE kendi cinsiyetindeki öğrencileri döndür!
+  if (cinsiyetFilter === 'erkek' || cinsiyetFilter === 'kiz') {
+    const filteredStudents = store.students.filter((s) => s.cinsiyet === cinsiyetFilter);
+    const allowedIds = new Set(filteredStudents.map((s) => s.id));
+    const filteredLeaves = store.leaves.filter((l) => allowedIds.has(l.studentId));
+
+    return NextResponse.json({
+      success: true,
+      store: {
+        ...store,
+        students: filteredStudents,
+        leaves: filteredLeaves,
+      }
+    });
+  }
+
+  return NextResponse.json({ success: true, store });
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { action } = body;
-    const store = globalThis.__pansiyonStoreV11!;
+    const store = globalThis.__pansiyonStoreV12!;
 
     if (action === 'belletmen_login') {
       const found = store.belletmenler.find((b) => b.id === body.id || b.name === body.name);
       if (!found || found.password !== String(body.password || '').trim()) {
         addLog(store, found ? found.name : 'Bilinmeyen', 'Hatalı Belletmen Girişi', 'Belletmen şifresi yanlış girildi.', 'hata');
-        return NextResponse.json({ success: false, message: 'Hatalı belletmen şifresi girdiniz! Sadece kayıtlı şifrenizle giriş yapabilirsiniz.' }, { status: 401 });
+        return NextResponse.json({ success: false, message: 'Hatalı belletmen şifresi girdiniz!' }, { status: 401 });
       }
-      addLog(store, found.name, 'Belletmen Girişi', `${found.cinsiyet === 'kadin' ? 'Kız' : 'Erkek'} Pansiyonu yoklama ekranına giriş yapıldı.`, 'basari');
-      return NextResponse.json({ success: true, belletmen: found, store });
+      const targetStudentGender = found.cinsiyet === 'kadin' ? 'kiz' : 'erkek';
+      addLog(store, found.name, 'Belletmen Girişi', `${targetStudentGender === 'kiz' ? 'Kız' : 'Erkek'} Pansiyonu yoklama ekranına giriş yapıldı.`, 'basari');
+      return NextResponse.json({
+        success: true,
+        belletmen: found,
+        allowedGender: targetStudentGender
+      });
     }
 
     if (action === 'log_forgot_password') {
@@ -103,6 +128,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Hatalı yönetici kullanıcı adı veya şifresi!' }, { status: 401 });
     }
 
+    // KISMİ YOKLAMA GÜNCELLEME (Erkek belletmen güncelleme yaptığında kız öğrencilerin verisi silinmez, sadece kendi öğrencileri güncellenir)
+    if (action === 'update_attendance') {
+      if (Array.isArray(body.students)) {
+        const updatedMap = new Map(body.students.map((s: StudentRecord) => [s.id, s]));
+        store.students = store.students.map((existing) =>
+          updatedMap.has(existing.id) ? (updatedMap.get(existing.id) as StudentRecord) : existing
+        );
+      }
+      return NextResponse.json({ success: true, message: 'Yoklama güncellendi.' });
+    }
+
     if (action === 'add_belletmen') {
       store.belletmenler.push({ id: Date.now().toString(), name: String(body.name).trim(), cinsiyet: body.cinsiyet === 'kadin' ? 'kadin' : 'erkek', brans: String(body.brans || 'Öğretmen').trim(), phone: String(body.phone || '05416571469').trim(), password: String(body.password || '1234').trim() });
       addLog(store, 'Yönetici', 'Belletmen Eklendi', `${body.name} eklendi.`, 'basari');
@@ -113,7 +149,8 @@ export async function POST(request: Request) {
       if (Array.isArray(body.rows)) {
         for (const r of body.rows) {
           if (!r.name) continue;
-          store.belletmenler.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kadin' : 'erkek', brans: String(r.brans), phone: String(r.phone || '05416571469'), password: String(r.password || '1234') });
+          const rawCins = String(r.cinsiyet || 'erkek').toLowerCase();
+          store.belletmenler.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: rawCins.includes('k') || rawCins.includes('bayan') ? 'kadin' : 'erkek', brans: String(r.brans), phone: String(r.phone || '05416571469'), password: String(r.password || '1234') });
           added++;
         }
       }
@@ -185,10 +222,6 @@ export async function POST(request: Request) {
       addLog(store, `Veli (${veliTel || st.anneTel})`, 'Veli İzin Talebi', `${st.name} için izin onaylandı.`, 'basari');
       return NextResponse.json({ success: true, message: 'İzin talebi onaylandı.', store });
     }
-    if (action === 'update_attendance') {
-      if (Array.isArray(body.students)) store.students = body.students;
-      return NextResponse.json({ success: true, message: 'Yoklama güncellendi.', store });
-    }
     if (action === 'add_student') {
       store.students.push({ id: Date.now().toString(), name: String(body.name), cinsiyet: body.cinsiyet === 'kiz' ? 'kiz' : 'erkek', tc: String(body.tc || '10000000000'), sinif: String(body.sinif || '9-A'), kat: Number(body.kat || 1), oda: String(body.oda || '101'), yatak: String(body.yatak || 'A'), anneTel: String(body.anneTel || '05416571469'), babaTel: String(body.babaTel || '05416571469'), status: 'var' });
       addLog(store, 'Yönetici', 'Öğrenci Eklendi', `${body.name} eklendi.`, 'basari');
@@ -199,7 +232,8 @@ export async function POST(request: Request) {
       if (Array.isArray(body.rows)) {
         for (const r of body.rows) {
           if (!r.name) continue;
-          store.students.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: String(r.cinsiyet).includes('k') ? 'kiz' : 'erkek', tc: String(r.tc), sinif: String(r.sinif), kat: Number(r.kat), oda: String(r.oda), yatak: String(r.yatak), anneTel: String(r.anneTel), babaTel: String(r.babaTel), status: 'var' });
+          const rawCins = String(r.cinsiyet || 'erkek').toLowerCase();
+          store.students.push({ id: Date.now().toString()+Math.random(), name: String(r.name), cinsiyet: rawCins.includes('k') || rawCins.includes('bayan') ? 'kiz' : 'erkek', tc: String(r.tc), sinif: String(r.sinif), kat: Number(r.kat), oda: String(r.oda), yatak: String(r.yatak), anneTel: String(r.anneTel), babaTel: String(r.babaTel), status: 'var' });
           added++;
         }
       }
@@ -213,7 +247,7 @@ export async function POST(request: Request) {
     if (action === 'add_duty_log') {
       const { tarih, seans, erkekBelletmen1, erkekBelletmen2, kizBelletmen1, kizBelletmen2, notlar } = body;
       store.dutyLogs.unshift({ id: Date.now().toString(), tarih: String(tarih || ''), seans: String(seans || ''), erkekBelletmen1: String(erkekBelletmen1 || ''), erkekBelletmen2: String(erkekBelletmen2 || ''), kizBelletmen1: String(kizBelletmen1 || ''), kizBelletmen2: String(kizBelletmen2 || ''), notlar: String(notlar || '') });
-      addLog(store, 'Nöbetçi Belletmenler', 'Resmî Nöbet Tutanağı', `${tarih} (${seans}) nöbet defteri kaydedildi.`, 'basari');
+      addLog(store, 'Nöbetçi Belletmen', 'Resmî Nöbet Tutanağı', `${tarih} (${seans}) nöbet defteri kaydedildi.`, 'basari');
       return NextResponse.json({ success: true, message: 'Nöbet defteri kaydedildi.', store });
     }
     if (action === 'clear_audit_logs') {
