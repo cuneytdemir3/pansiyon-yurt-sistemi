@@ -1,800 +1,481 @@
-'use client';
-
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Calendar, FileText, CheckCircle2, Home, Send, Check, Loader2,
-  Phone, Printer, X, LogOut, UserCheck, Lock, KeyRound, ShieldCheck, RefreshCw
-} from 'lucide-react';
-
-interface Student {
-  id: string;
-  name: string;
-  cinsiyet: 'erkek' | 'kiz';
-  kat: number;
-  oda: string;
-  anneAdi?: string;
-  anneTel: string;
-  babaAdi?: string;
-  babaTel: string;
-  status: 'var' | 'yok' | 'izinli';
-  izinAciklama?: string;
-}
+"use client";
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import SblLogo from '../components/SblLogo';
 
 export default function BelletmenPage() {
-  const [aktifRol, setAktifRol] = useState<'erkek' | 'kiz' | null>(null);
-  const [aktifBelletmenAd, setAktifBelletmenAd] = useState<string>('');
+  const [store, setStore] = useState<any>(null);
+  const [loggedBelletmen, setLoggedBelletmen] = useState<any>(null);
+  const [allowedGender, setAllowedGender] = useState<'erkek' | 'kiz'>('erkek');
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [belletmenler, setBelletmenler] = useState<any[]>([]);
-  const [aylikNobetler, setAylikNobetler] = useState<any[]>([]);
-  const [leaves, setLeaves] = useState<any[]>([]);
-  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  // Giriş Formu
+  const [selectedId, setSelectedId] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
 
-  const [secilenErkekId, setSecilenErkekId] = useState<string>('');
-  const [erkekSifre, setErkekSifre] = useState<string>('');
-  const [secilenKadinId, setSecilenKadinId] = useState<string>('');
-  const [kadinSifre, setKadinSifre] = useState<string>('');
-  const [loginError, setLoginError] = useState<string>('');
+  // Yoklama Filtreleri
+  const [selectedKat, setSelectedKat] = useState<number | 'all'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'yoklama' | 'defter' | 'izinler'>('yoklama');
+  const [saving, setSaving] = useState(false);
 
-  // 0 = Tüm Katlar, 1 = 1. Kat, 2 = 2. Kat, 3 = 3. Kat
-  const [selectedKat, setSelectedKat] = useState<number>(0);
-  const [tarih, setTarih] = useState<string>('2026-10-25');
-  const [seans, setSeans] = useState<'etut' | 'yat'>('etut');
-  const [sendingKey, setSendingKey] = useState<string | null>(null);
-  const [sentKeys, setSentKeys] = useState<Record<string, boolean>>({});
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Nöbet Defteri Formu
+  const [dutyLogForm, setDutyLogForm] = useState({
+    tarih: new Date().toISOString().split('T')[0],
+    seans: 'Gece Yat Yoklaması (22:00)',
+    erkekBelletmen1: '',
+    erkekBelletmen2: '',
+    kizBelletmen1: '',
+    kizBelletmen2: '',
+    notlar: ''
+  });
 
-  const [nobetDefteriAcik, setNobetDefteriAcik] = useState(false);
-  const [erkekBelletmen1, setErkekBelletmen1] = useState('Cüneyt DEMİR');
-  const [erkekBelletmen2, setErkekBelletmen2] = useState('Ali BEY');
-  const [kizBelletmen1, setKizBelletmen1] = useState('Ayşenur KAYA');
-  const [kizBelletmen2, setKizBelletmen2] = useState('Fatma YILMAZ');
-  const [nobetNotu, setNobetNotu] = useState('Pansiyon akşam etüt ve yat yoklamaları nöbetçi belletmen öğretmenler tarafından zamanında alındı. Katlarda asayiş ve düzen sağlandı.');
+  const loadData = async (genderFilter?: 'erkek' | 'kiz') => {
+    const g = genderFilter || allowedGender;
+    const url = loggedBelletmen
+      ? `/api/pansiyon?cinsiyet=${g}&t=${Date.now()}`
+      : `/api/pansiyon?t=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json();
+    if (data.success) {
+      setStore(data.store);
+      if (!selectedId && data.store?.belletmenler?.length > 0) {
+        setSelectedId(data.store.belletmenler[0].id);
+      }
+    }
+  };
 
-  // CANLI VERİ SENKRONİZASYONU (Cache-Busting + LocalStorage Köprüsü)
-  const loadRoleSpecificData = useCallback(async (rol: 'erkek' | 'kiz' | null) => {
-    try {
-      const ts = Date.now();
-      const url = rol ? `/api/pansiyon?cinsiyet=${rol}&t=${ts}` : `/api/pansiyon?t=${ts}`;
-      // tunnel_mobile_fallback: Önce doğrudan canlı tünelden çekmeyi dene, ardından API'yi kullan
-      let data: any = null;
+  useEffect(() => {
+    const saved = sessionStorage.getItem('pansiyon_belletmen_session');
+    if (saved) {
       try {
-        const rTunnel = await fetch('https://quantitative-julian-governor-scheme.trycloudflare.com/store?t=' + ts, { cache: 'no-store' });
-        if (rTunnel.ok) {
-          const dTunnel = await rTunnel.json();
-          if (dTunnel.success && dTunnel.store && Array.isArray(dTunnel.store.students)) {
-            data = dTunnel;
-          }
-        }
+        const parsed = JSON.parse(saved);
+        setLoggedBelletmen(parsed.belletmen);
+        setAllowedGender(parsed.allowedGender);
+        loadData(parsed.allowedGender);
+        return;
       } catch {}
-      if (!data) {
-        const res = await fetch(url, { cache: 'no-store' });
-        data = await res.json();
-      }
-
-      if (data.success && data.store) {
-        let serverStudents: Student[] = data.store.students || [];
-
-        // Aynı cihazda Admin panelinden yeni yüklenen liste varsa anında birleştir
-        try {
-          const localRaw = localStorage.getItem('pansiyon_shared_cache');
-          if (localRaw) {
-            const localStore = JSON.parse(localRaw);
-            if (Array.isArray(localStore.students) && localStore.students.length > serverStudents.length) {
-              const existingIds = new Set(serverStudents.map((s) => s.id));
-              for (const ls of localStore.students) {
-                if (!existingIds.has(ls.id)) {
-                  serverStudents.push(ls);
-                }
-              }
-            }
-          }
-        } catch {}
-
-        if (rol) {
-          const strictStudents = serverStudents.filter((s: Student) => s.cinsiyet === rol);
-          setStudents(strictStudents);
-          setLeaves(data.store.leaves || []);
-        } else {
-          setStudents([]);
-        }
-
-        const bList = data.store.belletmenler || [];
-        setBelletmenler(bList);
-        setAylikNobetler(data.store.aylikNobetler || []);
-        setLastSyncTime(new Date().toLocaleTimeString('tr-TR'));
-
-        const firstErkek = bList.find((b: any) => b.cinsiyet === 'erkek');
-        const firstKadin = bList.find((b: any) => b.cinsiyet === 'kadin');
-        setSecilenErkekId((prev) => prev || (firstErkek ? firstErkek.id : ''));
-        setSecilenKadinId((prev) => prev || (firstKadin ? firstKadin.id : ''));
-      }
-    } catch {}
+    }
+    loadData();
   }, []);
 
-  useEffect(() => {
-    const savedRole = localStorage.getItem('belletmen_rol') as 'erkek' | 'kiz' | null;
-    const savedName = localStorage.getItem('belletmen_ad') || '';
-    if (savedRole === 'erkek' || savedRole === 'kiz') {
-      setAktifRol(savedRole);
-      setAktifBelletmenAd(savedName);
-      loadRoleSpecificData(savedRole);
-    } else {
-      loadRoleSpecificData(null);
-    }
-  }, [loadRoleSpecificData]);
-
-  // HER 5 SANİYEDE BİR OTOMATİK CANLI GÜNCELLEME (Admin'den eklenen öğrenciler anında düşer)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadRoleSpecificData(aktifRol);
-    }, 5000);
-
-    const handleStorageEvent = () => loadRoleSpecificData(aktifRol);
-    window.addEventListener('storage', handleStorageEvent);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', handleStorageEvent);
-    };
-  }, [aktifRol, loadRoleSpecificData]);
-
-  useEffect(() => {
-    const gunKaydi = aylikNobetler.find((d) => d.tarih === tarih);
-    if (gunKaydi) {
-      setErkekBelletmen1(gunKaydi.erkek1);
-      setErkekBelletmen2(gunKaydi.erkek2);
-      setKizBelletmen1(gunKaydi.kadin1);
-      setKizBelletmen2(gunKaydi.kadin2);
-    }
-  }, [tarih, aylikNobetler]);
-
-  const handleLogin = async (rol: 'erkek' | 'kiz') => {
-    setLoginError('');
-    setFeedback(null);
-    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
-    const targetPass = rol === 'erkek' ? erkekSifre : kadinSifre;
-
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
     const res = await fetch('/api/pansiyon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'belletmen_login', id: targetId, password: targetPass }),
+      body: JSON.stringify({ action: 'belletmen_login', id: selectedId, password })
     });
     const data = await res.json();
-    if (res.ok && data.success) {
-      const allowedRole: 'erkek' | 'kiz' = data.belletmen.cinsiyet === 'kadin' ? 'kiz' : 'erkek';
-      setAktifRol(allowedRole);
-      setAktifBelletmenAd(data.belletmen.name);
-      localStorage.setItem('belletmen_rol', allowedRole);
-      localStorage.setItem('belletmen_ad', data.belletmen.name);
-      await loadRoleSpecificData(allowedRole);
+    if (data.success) {
+      setLoggedBelletmen(data.belletmen);
+      setAllowedGender(data.allowedGender);
+      sessionStorage.setItem('pansiyon_belletmen_session', JSON.stringify({
+        belletmen: data.belletmen,
+        allowedGender: data.allowedGender
+      }));
+      loadData(data.allowedGender);
     } else {
-      setLoginError(data.message || 'Şifre hatalı!');
+      setErrorMsg(data.message || 'Hatalı şifre!');
     }
   };
 
-  const handleForgotPassword = async (rol: 'erkek' | 'kiz') => {
-    setLoginError('');
-    setFeedback(null);
-    const targetId = rol === 'erkek' ? secilenErkekId : secilenKadinId;
-    const found = belletmenler.find((b) => b.id === targetId);
-
-    if (!found) {
-      setLoginError('Lütfen listeden isminizi seçin.');
-      return;
-    }
-    if (!found.phone || found.phone.length < 10) {
-      setLoginError('Sistemde kayıtlı geçerli bir cep telefonu numaranız bulunmuyor.');
-      return;
-    }
-
-    setFeedback({ type: 'success', text: 'Şifreniz WhatsApp üzerinden gönderiliyor, lütfen bekleyin...' });
-
-    try {
-      await fetch('/api/pansiyon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'log_forgot_password', id: found.id })
-      });
-
-      const res = await fetch('/api/belletmen/bildirim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: found.phone,
-          ogrenciAd: found.name,
-          seans: 'sifre_hatirlatma',
-          veliTipi: found.password
-        })
-      });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setFeedback({ type: 'success', text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp numaranıza gönderildi!` });
-      } else {
-        let directSuccess = false;
-        const fallbackMsg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın *${found.name}*,\n\nNöbetçi Belletmen Sistemi kayıtlı giriş şifreniz: *${found.password}*`;
-        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
-          if (!directUrl) continue;
-          try {
-            const r2 = await fetch(`${directUrl}/send-otp`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: found.phone, customMessage: fallbackMsg })
-            });
-            const d2 = await r2.json();
-            if (r2.ok && d2.success) {
-              directSuccess = true;
-              setFeedback({ type: 'success', text: `✅ Sayın ${found.name}, kayıtlı şifreniz WhatsApp numaranıza gönderildi!` });
-              break;
-            }
-          } catch {}
-        }
-        if (!directSuccess) {
-          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı.' });
-        }
-      }
-    } catch {
-      setFeedback({ type: 'error', text: 'Sunucu bağlantı hatası oluştu.' });
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('belletmen_rol');
-    localStorage.removeItem('belletmen_ad');
-    setAktifRol(null);
-    setStudents([]);
-    window.location.href = '/';
-  };
-
-  const getActiveLeaveText = (studentId: string) => {
-    const found = leaves.find((l) => l.studentId === studentId && l.baslangic <= tarih && l.bitis >= tarih);
-    return found ? `${found.baslangic} — ${found.bitis} (${found.tip}: ${found.aciklama})` : undefined;
-  };
-
-  const strictlyIsolatedStudents = students
-    .filter((s) => s.cinsiyet === aktifRol)
-    .map((s) => {
-      const leaveTxt = getActiveLeaveText(s.id);
-      return leaveTxt ? { ...s, status: 'izinli' as const, izinAciklama: leaveTxt } : s;
+  const handleForgotPassword = async () => {
+    if (!selectedId) return;
+    setErrorMsg('');
+    setInfoMsg('');
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'log_forgot_password', id: selectedId })
     });
-
-  // selectedKat === 0 ise TÜM KATLARI göster, değilse seçili katı göster
-  const katStudents = selectedKat === 0
-    ? strictlyIsolatedStudents
-    : strictlyIsolatedStudents.filter((s) => Number(s.kat) === selectedKat);
-
-  const katMevcudu = katStudents.length;
-  const varSayisi = katStudents.filter((s) => s.status === 'var').length;
-  const yokSayisi = katStudents.filter((s) => s.status === 'yok').length;
-  const izinliSayisi = katStudents.filter((s) => s.status === 'izinli').length;
-
-  const odalar = Array.from(new Set(katStudents.map((s) => s.oda))).sort();
-
-  const syncAttendance = async (updated: Student[]) => {
-    setStudents(updated);
-    try {
-      await fetch('/api/pansiyon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_attendance', students: updated }),
-      });
-    } catch {}
-  };
-
-  const handleStatusChange = (id: string, newStatus: 'var' | 'yok') => {
-    syncAttendance(students.map((s) => (s.id === id && s.cinsiyet === aktifRol ? { ...s, status: newStatus } : s)));
-  };
-
-  const handlePhoneChange = (id: string, field: 'anneTel' | 'babaTel', value: string) => {
-    setStudents((prev) => prev.map((s) => (s.id === id && s.cinsiyet === aktifRol ? { ...s, [field]: value } : s)));
-  };
-
-  const handleTumunuVarYap = () => {
-    const updated = students.map((s) => {
-      const hasLeave = getActiveLeaveText(s.id);
-      const katMatch = selectedKat === 0 || Number(s.kat) === selectedKat;
-      if (s.cinsiyet === aktifRol && katMatch && !hasLeave && s.status !== 'izinli') {
-        return { ...s, status: 'var' as const };
+    const data = await res.json();
+    if (data.success && data.belletmen) {
+      const msg = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın ${data.belletmen.name},\nBelletmen Yoklama Ekranı Giriş Şifreniz: *${data.belletmen.password}*`;
+      let sent = false;
+      if (data.tunnelUrl) {
+        try {
+          const r = await fetch(`${data.tunnelUrl}/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: data.belletmen.phone, code: data.belletmen.password, customMessage: msg })
+          });
+          if (r.ok) sent = true;
+        } catch {}
       }
-      return s;
-    });
-    syncAttendance(updated);
-    setFeedback({ type: 'success', text: `✅ Gösterilen izinsiz tüm öğrenciler 'Var' olarak işaretlendi.` });
-  };
-
-  const handleSendWhatsApp = async (student: Student, veliTipi: 'Anne' | 'Baba', phone: string) => {
-    const btnKey = `${student.id}-${veliTipi}`;
-    setSendingKey(btnKey);
-    setFeedback(null);
-
-    const veliIsim = veliTipi === 'Anne' ? (student.anneAdi || 'Anne') : (student.babaAdi || 'Baba');
-
-    try {
-      const res = await fetch('/api/belletmen/bildirim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, ogrenciAd: student.name, odaNo: student.oda, tarih, seans, veliTipi: `${veliTipi} - ${veliIsim}` })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
-        setFeedback({ type: 'success', text: data.message });
-      } else {
-        let directSuccess = false;
-        const fallbackMsg = data.customMessage || `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${veliIsim}), öğrenciniz *${student.name}* (Oda: ${student.oda}) *${tarih}* tarihli yoklamada pansiyonda *BULUNAMAMIŞTIR (YOK)*.`;
-        for (const directUrl of [data.tunnelUrl, 'http://localhost:3001', 'http://127.0.0.1:3001']) {
-          if (!directUrl) continue;
-          try {
-            const r2 = await fetch(`${directUrl}/send-otp`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, customMessage: fallbackMsg })
-            });
-            const d2 = await r2.json();
-            if (r2.ok && d2.success) {
-              directSuccess = true;
-              setSentKeys((prev) => ({ ...prev, [btnKey]: true }));
-              setFeedback({ type: 'success', text: `✅ ${student.name} velisine (${veliIsim} - ${phone}) WhatsApp bildirimi gönderildi!` });
-              break;
-            }
-          } catch {}
-        }
-        if (!directSuccess) {
-          setFeedback({ type: 'error', text: data.message || 'WhatsApp Botuna ulaşılamadı.' });
-        }
-      }
-    } catch {
-      setFeedback({ type: 'error', text: 'Bağlantı hatası oluştu.' });
-    } finally {
-      setSendingKey(null);
+      if (sent) setInfoMsg('Şifreniz kayıtlı WhatsApp numaranıza gönderildi.');
+      else setErrorMsg('WhatsApp sunucusu kapalı olduğu için gönderilemedi.');
     }
   };
 
-  const handleSaveAndPrintDutyLog = async () => {
+  const handleStatusChange = async (studentId: string, newStatus: 'var' | 'yok' | 'izinli') => {
+    if (!store?.students) return;
+    const updatedStudents = store.students.map((s: any) =>
+      s.id === studentId ? { ...s, status: newStatus } : s
+    );
+    setStore({ ...store, students: updatedStudents });
+    setSaving(true);
     await fetch('/api/pansiyon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'add_duty_log',
-        tarih,
-        seans: seans === 'etut' ? 'Etüt (19:15)' : 'Yat (23:00)',
-        erkekBelletmen1: aktifRol === 'erkek' ? erkekBelletmen1 : '-',
-        erkekBelletmen2: aktifRol === 'erkek' ? erkekBelletmen2 : '-',
-        kizBelletmen1: aktifRol === 'kiz' ? kizBelletmen1 : '-',
-        kizBelletmen2: aktifRol === 'kiz' ? kizBelletmen2 : '-',
-        notlar: nobetNotu,
-      }),
+      body: JSON.stringify({ action: 'update_attendance', students: updatedStudents })
     });
-    window.print();
+    setSaving(false);
   };
 
-  const erkekBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'erkek');
-  const kadinBelletmenler = belletmenler.filter((b) => b.cinsiyet === 'kadin');
+  const sendAbsenceWhatsApp = async (student: any, parentType: 'anne' | 'baba') => {
+    const targetPhone = parentType === 'anne' ? student.anneTel : student.babaTel;
+    const parentName = parentType === 'anne' ? student.anneAdi : student.babaAdi;
+    if (!targetPhone) {
+      alert('Bu velinin telefon numarası sistemde kayıtlı değil!');
+      return;
+    }
+    const text = `*Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu*\n\nSayın ${parentName || 'Velimiz'},\nÖğrencimiz *${student.name}* (Oda ${student.oda}), ${new Date().toLocaleDateString('tr-TR')} tarihli pansiyon yoklamasında *YOK* olarak işaretlenmiştir.\n\nBilgilerinize sunar, acil durumda nöbetçi belletmen öğretmenimizle iletişime geçmenizi rica ederiz.`;
 
-  if (!aktifRol) {
+    let sent = false;
+    if (store?.tunnelUrl) {
+      try {
+        const r = await fetch(`${store.tunnelUrl}/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: targetPhone, code: 'YOKLAMA', customMessage: text })
+        });
+        if (r.ok) sent = true;
+      } catch {}
+    }
+    if (sent) {
+      alert(`✅ ${student.name} için ${parentType.toUpperCase()} numarasına (${targetPhone}) WhatsApp devamsızlık bildirimi gönderildi!`);
+    } else {
+      alert('WhatsApp Botu kapalı! Doğrudan WhatsApp Web penceresi açılıyor...');
+      const clean = String(targetPhone).replace(/\D/g, '').slice(-10);
+      window.open(`https://wa.me/90${clean}?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
+  const handleSaveDutyLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_duty_log', ...dutyLogForm })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setStore(data.store);
+      setDutyLogForm({ ...dutyLogForm, notlar: '' });
+      alert('Resmî nöbet tutanağı kaydedildi!');
+    }
+  };
+
+  if (!loggedBelletmen) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-3 sm:p-4">
-        <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl border border-slate-200 p-5 sm:p-10 space-y-6">
-          <div className="text-center space-y-2">
-            <span className="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full border border-indigo-200">
-              Prof. Dr. Mümtaz Turhan SBL Pansiyonu
-            </span>
-            <h1 className="text-xl sm:text-3xl font-extrabold text-slate-900 mt-2">
-              Nöbetçi Belletmen Şifreli Giriş
-            </h1>
-            <p className="text-xs text-slate-500">
-              Gizlilik kuralları gereği <strong>Erkek Belletmenler yalnızca Erkek Pansiyonunu</strong>, <strong>Kadın Belletmenler yalnızca Kız Pansiyonunu</strong> görebilir.
+      <div className="min-h-screen bg-[#f4f8fc] flex flex-col justify-between">
+        <header className="bg-white border-b px-6 py-3 flex justify-between items-center">
+          <SblLogo size="sm" />
+          <Link href="/" className="text-xs font-bold text-[#006bb6] hover:underline">
+            ← Ana Sayfaya Dön
+          </Link>
+        </header>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-3xl shadow-xl border max-w-md w-full">
+            <div className="flex justify-center mb-4">
+              <SblLogo size="md" showText={false} />
+            </div>
+            <h1 className="text-xl font-extrabold text-center text-slate-900">Nöbetçi Belletmen Girişi</h1>
+            <p className="text-xs text-center text-slate-500 mb-6">
+              Kız ve Erkek pansiyonu yoklama ekranları KVKK gereği izole edilmiştir.
             </p>
-          </div>
-
-          {feedback && (
-            <div className={`p-3.5 rounded-2xl text-xs font-bold text-center ${feedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
-              {feedback.text}
-            </div>
-          )}
-
-          {loginError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-2xl text-xs font-bold text-center">
-              ❌ {loginError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            <div className="border-2 border-blue-200 bg-blue-50/40 rounded-2xl p-5 space-y-4">
-              <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <h2 className="text-base sm:text-lg font-extrabold text-blue-950">1) Erkek Belletmen Girişi</h2>
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Erkek Belletmen:</label>
-                  <select
-                    value={secilenErkekId}
-                    onChange={(e) => setSecilenErkekId(e.target.value)}
-                    className="w-full border border-blue-300 rounded-xl px-3 py-3 text-base sm:text-xs font-bold bg-white min-h-[46px]"
-                  >
-                    {erkekBelletmenler.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      placeholder="Şifrenizi Girin"
-                      value={erkekSifre}
-                      onChange={(e) => setErkekSifre(e.target.value)}
-                      className="w-full pl-9 pr-3 py-3 border border-blue-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
-                    />
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('erkek')} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline cursor-pointer">
-                      <KeyRound className="w-3 h-3" /> Şifremi Unuttum (WhatsApp Gönder)
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleLogin('erkek')}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]"
+            {errorMsg && <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl text-center">{errorMsg}</div>}
+            {infoMsg && <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-xl text-center">{infoMsg}</div>}
+            <form onSubmit={handleLogin} className="space-y-4">
+              <select
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+                className="w-full p-3.5 border rounded-xl font-bold text-sm"
               >
-                Erkek Pansiyonu Yoklamasına Gir →
+                {(store?.belletmenler || []).map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.cinsiyet === 'kadin' ? '👩 ' : '👨 '} {b.name} ({b.brans})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="password"
+                required
+                placeholder="Şifreniz"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3.5 border rounded-xl text-center text-lg font-bold"
+              />
+              <button type="submit" className="w-full bg-[#006bb6] hover:bg-[#005694] text-white py-3.5 rounded-xl font-bold text-sm shadow">
+                Yoklama Ekranına Gir
               </button>
-            </div>
-
-            <div className="border-2 border-rose-200 bg-rose-50/40 rounded-2xl p-5 space-y-4">
-              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold">
-                <UserCheck className="w-6 h-6" />
-              </div>
-              <h2 className="text-base sm:text-lg font-extrabold text-rose-950">2) Kadın Belletmen Girişi</h2>
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Nöbetçi Kadın Belletmen:</label>
-                  <select
-                    value={secilenKadinId}
-                    onChange={(e) => setSecilenKadinId(e.target.value)}
-                    className="w-full border border-rose-300 rounded-xl px-3 py-3 text-base sm:text-xs font-bold bg-white min-h-[46px]"
-                  >
-                    {kadinBelletmenler.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name} ({b.brans})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Giriş Şifreniz:</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      placeholder="Şifrenizi Girin"
-                      value={kadinSifre}
-                      onChange={(e) => setKadinSifre(e.target.value)}
-                      className="w-full pl-9 pr-3 py-3 border border-rose-300 rounded-xl bg-white text-base sm:text-xs font-mono min-h-[46px]"
-                    />
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <button type="button" onClick={() => handleForgotPassword('kiz')} className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 hover:underline cursor-pointer">
-                      <KeyRound className="w-3 h-3" /> Şifremi Unuttum (WhatsApp Gönder)
-                    </button>
-                  </div>
-                </div>
-              </div>
               <button
-                onClick={() => handleLogin('kiz')}
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-xl text-sm sm:text-xs cursor-pointer min-h-[48px]"
+                type="button"
+                onClick={handleForgotPassword}
+                className="w-full text-xs text-[#006bb6] font-semibold hover:underline py-1"
               >
-                Kız Pansiyonu Yoklamasına Gir →
+                📲 Şifremi Unuttum (WhatsApp Gönder)
               </button>
-            </div>
-          </div>
-
-          <div className="flex justify-between items-center pt-3 border-t border-slate-100 text-xs">
-            <a href="/" className="text-slate-600 font-bold hover:underline">← Ana Sayfaya Dön</a>
+            </form>
           </div>
         </div>
       </div>
     );
   }
 
-  const bolumYoklar = strictlyIsolatedStudents.filter((s) => s.status === 'yok');
-  const bolumIzinliler = strictlyIsolatedStudents.filter((s) => s.status === 'izinli');
+  const allStudents = (store?.students || []).filter((s: any) => s.cinsiyet === allowedGender);
+  const filteredStudents = allStudents.filter((s: any) => {
+    const katMatch = selectedKat === 'all' || Number(s.kat) === Number(selectedKat);
+    const searchMatch =
+      !searchTerm ||
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(s.oda).toLowerCase().includes(searchTerm.toLowerCase());
+    return katMatch && searchMatch;
+  });
+
+  const varCount = allStudents.filter((s: any) => s.status === 'var').length;
+  const yokCount = allStudents.filter((s: any) => s.status === 'yok').length;
+  const izinCount = allStudents.filter((s: any) => s.status === 'izinli').length;
 
   return (
-    <div className="min-h-screen bg-slate-100 p-2.5 sm:p-6 pb-20">
-      <div className="max-w-5xl mx-auto space-y-4 print:hidden">
-
-        {/* ÜST PANEL */}
-        <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-3.5">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`inline-block text-[11px] font-extrabold px-3 py-1 rounded-full ${aktifRol === 'erkek' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'}`}>
-                  {aktifRol === 'erkek'
-                    ? `👨 Erkek Pansiyonu Nöbetçileri: ${erkekBelletmen1} & ${erkekBelletmen2}`
-                    : `👩 Kız Pansiyonu Nöbetçileri: ${kizBelletmen1} & ${kizBelletmen2}`}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Canlı Senkronizasyon Aktif ({lastSyncTime || 'Şimdi'})
-                </span>
-              </div>
-              <h1 className="text-base sm:text-xl font-extrabold text-slate-900">
-                {aktifRol === 'erkek' ? 'Erkek Öğrenci Pansiyonu' : 'Kız Öğrenci Pansiyonu'} Yoklama Ekranı (Toplam: {strictlyIsolatedStudents.length} Öğrenci)
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                onClick={() => loadRoleSpecificData(aktifRol)}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 py-2.5 px-3.5 rounded-xl cursor-pointer min-h-[42px]"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Listeyi Yenile
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 py-2.5 px-4 rounded-xl cursor-pointer min-h-[42px]"
-              >
-                <LogOut className="w-4 h-4 shrink-0" /> Çıkış
-              </button>
+    <div className="min-h-screen bg-[#f4f8fc] text-slate-800">
+      <header className="bg-white border-b sticky top-0 z-20 px-4 md:px-8 py-3">
+        <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <SblLogo size="sm" showText={false} />
+            <div>
+              <span className="text-xs font-extrabold uppercase text-[#006bb6]">
+                {allowedGender === 'kiz' ? '👩 KIZ PANSİYONU' : '👨 ERKEK PANSİYONU'} NÖBET EKRANI
+              </span>
+              <h1 className="text-base font-black text-slate-900">{loggedBelletmen.name}</h1>
             </div>
           </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
-            <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2">
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-h-[42px]">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span className="text-xs font-medium text-slate-600">Tarih:</span>
-                </div>
-                <input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none ml-2" />
-              </div>
-
-              <div className="grid grid-cols-2 bg-slate-100 p-1 rounded-xl border border-slate-200 min-h-[42px]">
-                <button onClick={() => setSeans('etut')} className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${seans === 'etut' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'}`}>
-                  Etüt (19:15)
-                </button>
-                <button onClick={() => setSeans('yat')} className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${seans === 'yat' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'}`}>
-                  Yat (23:00)
-                </button>
-              </div>
-            </div>
-
-            <button onClick={() => setNobetDefteriAcik(true)} className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer min-h-[44px]">
-              <FileText className="w-4 h-4 shrink-0" /> {aktifRol === 'erkek' ? 'Erkek Pansiyonu Nöbet Defteri (PDF)' : 'Kız Pansiyonu Nöbet Defteri (PDF)'}
+          <div className="flex items-center gap-2">
+            {saving && <span className="text-xs font-bold text-amber-600 animate-pulse">💾 Kaydediliyor...</span>}
+            <button
+              onClick={() => loadData(allowedGender)}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold"
+            >
+              🔄 Listeyi Yenile
+            </button>
+            <button
+              onClick={() => { sessionStorage.removeItem('pansiyon_belletmen_session'); setLoggedBelletmen(null); }}
+              className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold"
+            >
+              Çıkış
             </button>
           </div>
         </div>
+      </header>
 
-        {feedback && (
-          <div className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-between ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-rose-50 border-rose-300 text-rose-800'}`}>
-            <span>{feedback.text}</span>
-            <button onClick={() => setFeedback(null)} className="underline ml-3 shrink-0">Kapat</button>
+      <main className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+        {/* ÖZET İSTATİSTİK KARTLARI */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white p-4 rounded-2xl border shadow-sm">
+            <span className="text-xs text-slate-400 font-bold">Toplam Öğrenci</span>
+            <p className="text-2xl font-black text-slate-900">{allStudents.length}</p>
           </div>
-        )}
-
-        {/* KAT SEÇİMİ (HER KATTAKİ ÖĞRENCİ SAYISINI CANLI GÖSTERİR) */}
-        <div className="bg-white/95 backdrop-blur-md sticky top-2 z-20 rounded-2xl p-3 shadow-md border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-            <button
-              onClick={() => setSelectedKat(0)}
-              className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                selectedKat === 0 ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              Tüm Katlar ({strictlyIsolatedStudents.length})
-            </button>
-            {[1, 2, 3].map((kat) => {
-              const count = strictlyIsolatedStudents.filter((s) => Number(s.kat) === kat).length;
-              return (
-                <button
-                  key={kat}
-                  onClick={() => setSelectedKat(kat)}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${
-                    selectedKat === kat ? (aktifRol === 'erkek' ? 'bg-blue-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs') : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {kat}. Kat ({count})
-                </button>
-              );
-            })}
+          <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl">
+            <span className="text-xs text-emerald-700 font-bold">🟢 Yurtta (Var)</span>
+            <p className="text-2xl font-black text-emerald-900">{varCount}</p>
           </div>
+          <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl">
+            <span className="text-xs text-rose-700 font-bold">🔴 Yoklamada Yok</span>
+            <p className="text-2xl font-black text-rose-900">{yokCount}</p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl">
+            <span className="text-xs text-amber-700 font-bold">🟡 Evci / İzinli</span>
+            <p className="text-2xl font-black text-amber-900">{izinCount}</p>
+          </div>
+        </div>
 
-          <button onClick={handleTumunuVarYap} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px]">
-            <CheckCircle2 className="w-4 h-4" /> Tümünü Var Yap
+        {/* MODÜL SEKMELERİ */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setActiveTab('yoklama')}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${
+              activeTab === 'yoklama' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'
+            }`}
+          >
+            📋 Kat & Oda Yoklaması ({allStudents.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('defter')}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${
+              activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'
+            }`}
+          >
+            📖 Pansiyon Nöbet Defteri ({store?.dutyLogs?.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab('izinler')}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${
+              activeTab === 'izinler' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'
+            }`}
+          >
+            🟡 İzinli Öğrenci Listesi ({store?.leaves?.length || 0})
           </button>
         </div>
 
-        {/* ÖZET KARTLARI */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200">
-            <div className="text-[11px] text-slate-500">{selectedKat === 0 ? 'Toplam Mevcut' : `${selectedKat}. Kat Mevcudu`}</div>
-            <div className="text-xl font-extrabold text-slate-900 mt-0.5">{katMevcudu}</div>
-          </div>
-          <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200">
-            <div className="text-[11px] text-emerald-700 font-medium">Var</div>
-            <div className="text-xl font-extrabold text-emerald-700 mt-0.5">{varSayisi}</div>
-          </div>
-          <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200">
-            <div className="text-[11px] text-rose-700 font-medium">Yok</div>
-            <div className="text-xl font-extrabold text-rose-700 mt-0.5">{yokSayisi}</div>
-          </div>
-          <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200">
-            <div className="text-[11px] text-amber-700 font-medium">İzinli</div>
-            <div className="text-xl font-extrabold text-amber-700 mt-0.5">{izinliSayisi}</div>
-          </div>
-        </div>
-
-        {/* ODALAR VE ÖĞRENCİ KARTLARI */}
-        {odalar.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-500">
-            Bu katta kayıtlı {aktifRol === 'erkek' ? 'erkek' : 'kız'} öğrenci bulunmamaktadır. Üstteki <strong>Tüm Katlar</strong> butonuna tıklayarak diğer katlardaki öğrencileri görebilirsiniz.
-          </div>
-        ) : (
+        {activeTab === 'yoklama' && (
           <div className="space-y-4">
-            {odalar.map((odaNo) => {
-              const odaOgrencileri = katStudents.filter((s) => s.oda === odaNo);
-              return (
-                <div key={odaNo} className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-                  <div className={`${aktifRol === 'erkek' ? 'bg-slate-900' : 'bg-rose-950'} text-white px-4 py-3 flex items-center justify-between`}>
-                    <div className="flex items-center gap-2 text-xs font-bold">
-                      <Home className="w-4 h-4 text-blue-400" /> Oda No: {odaNo} ({odaOgrencileri[0]?.kat}. Kat)
+            {/* KAT FİLTRESİ VE ARAMA */}
+            <div className="bg-white p-4 rounded-2xl border shadow-sm flex flex-wrap justify-between items-center gap-3">
+              <div className="flex flex-wrap gap-1.5">
+                {(['all', 1, 2, 3, 4] as const).map((k) => (
+                  <button
+                    key={String(k)}
+                    onClick={() => setSelectedKat(k)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                      selectedKat === k ? 'bg-[#006bb6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {k === 'all' ? 'Tüm Katlar' : `${k}. Kat`}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                placeholder="🔍 Öğrenci adı veya oda ara..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="p-2.5 border rounded-xl text-xs w-full sm:w-64"
+              />
+            </div>
+
+            {/* ÖĞRENCİ YOKLAMA KARTLARI */}
+            {filteredStudents.length === 0 ? (
+              <div className="bg-white p-10 rounded-2xl border text-center text-slate-400 text-sm">
+                Bu filtrede kayıtlı öğrenci bulunmamaktadır.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {filteredStudents.map((st: any) => (
+                  <div
+                    key={st.id}
+                    className={`bg-white rounded-2xl border p-4 shadow-sm transition ${
+                      st.status === 'yok' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">
+                          {st.kat}. Kat • Oda {st.oda}
+                        </span>
+                        <h3 className="text-base font-extrabold text-slate-900 mt-1">{st.name}</h3>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleStatusChange(st.id, 'var')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                            st.status === 'var'
+                              ? 'bg-emerald-600 text-white shadow'
+                              : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'
+                          }`}
+                        >
+                          Var
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(st.id, 'yok')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                            st.status === 'yok'
+                              ? 'bg-rose-600 text-white shadow'
+                              : 'bg-slate-100 text-slate-600 hover:bg-rose-50'
+                          }`}
+                        >
+                          Yok
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(st.id, 'izinli')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                            st.status === 'izinli'
+                              ? 'bg-amber-500 text-white shadow'
+                              : 'bg-slate-100 text-slate-600 hover:bg-amber-50'
+                          }`}
+                        >
+                          İzinli
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full text-slate-100">
-                      {odaOgrencileri.length} Öğrenci
-                    </span>
-                  </div>
 
-                  <div className="p-3.5 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    {odaOgrencileri.map((student) => {
-                      const anneKey = `${student.id}-Anne`;
-                      const babaKey = `${student.id}-Baba`;
-
-                      return (
-                        <div key={student.id} className="border border-slate-200 rounded-2xl p-3.5 sm:p-4 space-y-3 bg-white">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="font-extrabold text-slate-900 text-sm">{student.name}</h3>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
-                                {student.kat}. Kat • Oda: <strong>{student.oda}</strong>
-                              </p>
-                              <p className="text-[11px] text-slate-500">
-                                Anne: <strong>{student.anneAdi || '-'}</strong> | Baba: <strong>{student.babaAdi || '-'}</strong>
-                              </p>
-                            </div>
-                            <span className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 ${student.status === 'izinli' ? 'bg-amber-100 text-amber-800' : student.status === 'yok' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {student.status === 'izinli' ? 'İzinli' : student.status === 'yok' ? 'Yok' : 'Var'}
-                            </span>
-                          </div>
-
-                          {student.status === 'izinli' ? (
-                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
-                              <strong>Otomatik İzinli:</strong> {student.izinAciklama || 'Veli İzni Aktif'}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="grid grid-cols-2 gap-2 pt-1">
-                                <button onClick={() => handleStatusChange(student.id, 'var')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'var' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
-                                  ✓ Var
-                                </button>
-                                <button onClick={() => handleStatusChange(student.id, 'yok')} className={`py-2.5 rounded-xl text-xs font-extrabold cursor-pointer min-h-[42px] transition-all ${student.status === 'yok' ? 'bg-red-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700'}`}>
-                                  ✕ Yok
-                                </button>
-                              </div>
-
-                              {student.status === 'yok' && (
-                                <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl space-y-2.5 mt-2">
-                                  <div className="text-[11px] font-extrabold text-rose-800">WhatsApp Yoklama Bildirimi Gönder:</div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                    <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
-                                      <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px] truncate">{student.anneAdi || 'Anne'}:</span>
-                                      <input type="tel" value={student.anneTel} onChange={(e) => handlePhoneChange(student.id, 'anneTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
-                                    </div>
-                                    <div className="flex items-center bg-white border border-rose-200 rounded-xl px-2.5 py-2 min-h-[40px]">
-                                      <Phone className="w-3.5 h-3.5 text-slate-400 mr-1.5 shrink-0" />
-                                      <span className="text-slate-500 mr-1 text-[11px] truncate">{student.babaAdi || 'Baba'}:</span>
-                                      <input type="tel" value={student.babaTel} onChange={(e) => handlePhoneChange(student.id, 'babaTel', e.target.value)} className="w-full font-mono text-xs text-slate-800 focus:outline-none" />
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <button type="button" disabled={sendingKey === anneKey} onClick={() => handleSendWhatsApp(student, 'Anne', student.anneTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === anneKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[anneKey] ? <><Check className="w-4 h-4" /> Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Anneye WhatsApp At</>}
-                                    </button>
-                                    <button type="button" disabled={sendingKey === babaKey} onClick={() => handleSendWhatsApp(student, 'Baba', student.babaTel)} className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-3 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                                      {sendingKey === babaKey ? <><Loader2 className="w-4 h-4 animate-spin" /> Gönderiliyor...</> : sentKeys[babaKey] ? <><Check className="w-4 h-4" /> Gönderildi</> : <><Send className="w-3.5 h-3.5" /> Babaya WhatsApp At</>}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
+                    {/* YOK SEÇİLDİĞİNDE AÇILAN WHATSAPP VELİ BİLDİRİM ÇUBUĞU */}
+                    {st.status === 'yok' && (
+                      <div className="mt-3 pt-3 border-t border-rose-100 bg-rose-50/60 p-2.5 rounded-xl flex flex-wrap justify-between items-center gap-2">
+                        <span className="text-[11px] font-bold text-rose-800">
+                          🚨 Veliye WhatsApp Devamsızlık Mesajı:
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => sendAbsenceWhatsApp(st, 'anne')}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold"
+                          >
+                            📲 Anneye Gönder ({st.anneTel || 'Yok'})
+                          </button>
+                          <button
+                            onClick={() => sendAbsenceWhatsApp(st, 'baba')}
+                            className="bg-[#006bb6] hover:bg-[#005694] text-white px-2.5 py-1 rounded-lg text-[11px] font-bold"
+                          >
+                            📲 Babaya Gönder ({st.babaTel || 'Yok'})
+                          </button>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            )}
           </div>
         )}
-      </div>
 
-      {/* RESMÎ MEB NÖBET DEFTERİ MODAL */}
-      {nobetDefteriAcik && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-8 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto print:max-h-none print:shadow-none">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 print:hidden">
-              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
-                {aktifRol === 'erkek' ? 'Erkek Pansiyonu Resmî Nöbet Defteri' : 'Kız Pansiyonu Resmî Nöbet Defteri'}
-              </h2>
-              <button onClick={() => setNobetDefteriAcik(false)} className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="border border-slate-300 p-4 sm:p-6 rounded-xl space-y-4 text-slate-900 print:border-none print:p-0">
-              <div className="text-center space-y-1 border-b-2 border-slate-800 pb-3">
-                <p className="text-xs font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</p>
-                <p className="text-xs sm:text-sm font-extrabold uppercase">Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Müdürlüğü</p>
-                <p className="text-[11px] font-semibold uppercase text-slate-700">
-                  {aktifRol === 'erkek' ? 'ERKEK ÖĞRENCİ PANSİYONU' : 'KIZ ÖĞRENCİ PANSİYONU'} GÜNLÜK NÖBET TUTANAĞI ({tarih} - {seans === 'etut' ? '19:15 Etüt' : '23:00 Yat'})
-                </p>
+        {activeTab === 'defter' && (
+          <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
+            <h2 className="text-base font-extrabold text-slate-900">📖 Resmî Pansiyon Nöbet Defteri Tutanağı Ekle</h2>
+            <form onSubmit={handleSaveDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+              <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl" />
+              <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3">
+                <option value="1. Etüt Yoklaması (19:30)">1. Etüt Yoklaması (19:30)</option>
+                <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
+                <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
+              </select>
+              <input placeholder="Erkek Belletmen 1 Adı" value={dutyLogForm.erkekBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen1: e.target.value })} className="p-2.5 border rounded-xl" />
+              <input placeholder="Erkek Belletmen 2 Adı" value={dutyLogForm.erkekBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen2: e.target.value })} className="p-2.5 border rounded-xl" />
+              <input placeholder="Kız Belletmen 1 Adı" value={dutyLogForm.kizBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen1: e.target.value })} className="p-2.5 border rounded-xl" />
+              <input placeholder="Kız Belletmen 2 Adı" value={dutyLogForm.kizBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen2: e.target.value })} className="p-2.5 border rounded-xl" />
+              <textarea rows={3} placeholder="Nöbet vukuat ve yoklama notları..." value={dutyLogForm.notlar} onChange={(e) => setDutyLogForm({ ...dutyLogForm, notlar: e.target.value })} className="md:col-span-4 p-2.5 border rounded-xl" />
+              <div className="md:col-span-4 flex justify-end">
+                <button type="submit" className="bg-[#006bb6] text-white px-6 py-2.5 rounded-xl font-bold">
+                  Tutanağı Kaydet
+                </button>
               </div>
-
-              <div className="border border-slate-300 p-3 rounded-lg text-xs">
-                Toplam Kayıtlı: <strong>{strictlyIsolatedStudents.length}</strong> | Var: <strong>{strictlyIsolatedStudents.filter(s => s.status === 'var').length}</strong> | Yok: <strong>{bolumYoklar.length}</strong> | İzinli: <strong>{bolumIzinliler.length}</strong>
-              </div>
-
-              <div className="space-y-1.5">
-                <h4 className="text-xs font-bold uppercase bg-slate-100 p-1.5 border-l-4 border-rose-600">
-                  1. Yoklamada Bulunmayan Öğrenciler ({bolumYoklar.length})
-                </h4>
-                {bolumYoklar.length === 0 ? (
-                  <p className="text-xs italic pl-2">Yoklamada habersiz eksik öğrenci yoktur.</p>
-                ) : (
-                  <div className="space-y-1 text-xs">
-                    {bolumYoklar.map((s) => (
-                      <div key={s.id} className="border-b py-1 flex justify-between">
-                        <strong>{s.name} (Oda {s.oda})</strong>
-                        <span>Veli: {s.anneAdi} ({s.anneTel})</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4 text-center text-xs">
-                {aktifRol === 'erkek' ? (
-                  <>
-                    <div><p className="font-bold">1. Nöbetçi Erkek Belletmen</p><p className="mt-1">{erkekBelletmen1}</p><p className="mt-5 text-slate-400">İmza</p></div>
-                    <div><p className="font-bold">2. Nöbetçi Erkek Belletmen</p><p className="mt-1">{erkekBelletmen2}</p><p className="mt-5 text-slate-400">İmza</p></div>
-                  </>
-                ) : (
-                  <>
-                    <div><p className="font-bold">1. Nöbetçi Kadın Belletmen</p><p className="mt-1">{kizBelletmen1}</p><p className="mt-5 text-slate-400">İmza</p></div>
-                    <div><p className="font-bold">2. Nöbetçi Kadın Belletmen</p><p className="mt-1">{kizBelletmen2}</p><p className="mt-5 text-slate-400">İmza</p></div>
-                  </>
-                )}
-                <div><p className="font-bold">Müdür Yardımcısı</p><p className="mt-1">Pansiyon İdaresi</p><p className="mt-5 text-slate-400">İmza / Mühür</p></div>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-end gap-2.5 print:hidden">
-              <button onClick={() => setNobetDefteriAcik(false)} className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 cursor-pointer min-h-[42px]">
-                Kapat
-              </button>
-              <button onClick={handleSaveAndPrintDutyLog} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer min-h-[42px]">
-                <Printer className="w-4 h-4" /> Kaydet ve Resmî PDF Çıktısı Al
-              </button>
-            </div>
+            </form>
           </div>
-        </div>
-      )}
+        )}
+
+        {activeTab === 'izinler' && (
+          <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
+            <h2 className="text-base font-extrabold text-slate-900">🟡 Veli Onaylı İzinli Öğrenciler</h2>
+            {(store?.leaves || []).length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Kayıtlı izin bulunmamaktadır.</p>
+            ) : (
+              (store?.leaves || []).map((lv: any) => (
+                <div key={lv.id} className="p-3 border rounded-xl bg-amber-50/40 flex justify-between items-center text-xs">
+                  <div>
+                    <strong className="text-slate-900">{lv.studentName} (Oda {lv.oda})</strong>
+                    <span className="ml-2 bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">{lv.tip}</span>
+                    <p className="text-slate-600 mt-1">{lv.aciklama}</p>
+                  </div>
+                  <div className="text-right font-bold text-slate-600">
+                    {lv.baslangic} → {lv.bitis}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

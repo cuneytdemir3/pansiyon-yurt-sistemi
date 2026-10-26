@@ -35,14 +35,9 @@ export interface StoreData {
   tunnelUrl?: string;
 }
 
-// Varsayılan öğrenci listesi BOŞ bırakıldı (Hayalet öğrenci numarası eşleşmesini önlemek için)
 const DEFAULT_STORE: StoreData = {
   students: [],
-  belletmenler: [
-    { id: 'b1', name: 'Cüneyt DEMİR', cinsiyet: 'erkek', brans: 'Bilişim Teknolojileri', phone: '', password: '1234' },
-    { id: 'b2', name: 'Ali BEY', cinsiyet: 'erkek', brans: 'Matematik', phone: '', password: '1234' },
-    { id: 'b3', name: 'Ayşenur KAYA', cinsiyet: 'kadin', brans: 'Edebiyat', phone: '', password: '1234' }
-  ],
+  belletmenler: [],
   aylikNobetler: [],
   leaves: [],
   dutyLogs: [],
@@ -193,7 +188,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl });
     }
 
-    // VELİ NUMARA KONTROLÜ: Kayıtlı öğrenci yoksa kesin olarak reddeder
     if (action === 'verify_parent_phone') {
       const targetPhone = normalizePhone10(body.phone);
       if (targetPhone.length < 10) {
@@ -204,7 +198,9 @@ export async function POST(request: Request) {
       }
 
       const matchedStudents = store.students.filter((s) => {
-        return normalizePhone10(s.anneTel) === targetPhone || normalizePhone10(s.babaTel) === targetPhone;
+        const aTel = normalizePhone10(s.anneTel);
+        const bTel = normalizePhone10(s.babaTel);
+        return (aTel.length === 10 && aTel === targetPhone) || (bTel.length === 10 && bTel === targetPhone);
       });
 
       if (matchedStudents.length === 0) {
@@ -240,7 +236,7 @@ export async function POST(request: Request) {
         addLog(store, found.name, 'Şifre Hatırlatma', `WhatsApp (${found.phone}) üzerinden şifre gönderildi.`, 'uyari');
         await saveStore(store);
       }
-      return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl });
+      return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl, belletmen: found });
     }
 
     if (action === 'admin_login') {
@@ -263,6 +259,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Yoklama buluta kaydedildi.', store });
     }
 
+    // ÖĞRENCİ EKLEME (Numara boşsa kesinlikle boş bırakılır, kendi numaranız atanmaz!)
     if (action === 'add_student') {
       const newStudent: StudentRecord = {
         id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
@@ -270,9 +267,9 @@ export async function POST(request: Request) {
         cinsiyet: parseStudentGender(body.cinsiyet),
         kat: normalizeKat(body.kat),
         oda: String(body.oda || '101').trim(),
-        anneAdi: String(body.anneAdi || 'Anne').trim(),
+        anneAdi: String(body.anneAdi || '').trim(),
         anneTel: String(body.anneTel || '').trim(),
-        babaAdi: String(body.babaAdi || 'Baba').trim(),
+        babaAdi: String(body.babaAdi || '').trim(),
         babaTel: String(body.babaTel || '').trim(),
         status: 'var'
       };
@@ -293,9 +290,9 @@ export async function POST(request: Request) {
             cinsiyet: parseStudentGender(r.cinsiyet),
             kat: normalizeKat(r.kat),
             oda: String(r.oda || '101').trim(),
-            anneAdi: String(r.anneAdi || 'Anne').trim(),
+            anneAdi: String(r.anneAdi || '').trim(),
             anneTel: String(r.anneTel || '').trim(),
-            babaAdi: String(r.babaAdi || 'Baba').trim(),
+            babaAdi: String(r.babaAdi || '').trim(),
             babaTel: String(r.babaTel || '').trim(),
             status: 'var'
           });
@@ -311,6 +308,14 @@ export async function POST(request: Request) {
       store.students = store.students.filter((s) => s.id !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
+    }
+
+    if (action === 'clear_all_students') {
+      store.students = [];
+      store.leaves = [];
+      addLog(store, 'Yönetici', 'Öğrenci Listesi Sıfırlandı', 'Tüm öğrenci kayıtları temizlendi.', 'uyari');
+      await saveStore(store);
+      return NextResponse.json({ success: true, message: 'Tüm öğrenci listesi temizlendi.', store });
     }
 
     if (action === 'add_belletmen') {
@@ -383,31 +388,14 @@ export async function POST(request: Request) {
         const dateKey = `${yearMonth}-${d < 10 ? '0'+d : d}`;
         store.aylikNobetler.push({
           tarih: dateKey,
-          erkek1: erkekler.length > 0 ? erkekler[(d * 2 - 2) % erkekler.length].name : 'Erkek 1',
-          erkek2: erkekler.length > 1 ? erkekler[(d * 2 - 1) % erkekler.length].name : 'Erkek 2',
-          kadin1: kadinlar.length > 0 ? kadinlar[(d * 2 - 2) % kadinlar.length].name : 'Kadın 1',
-          kadin2: kadinlar.length > 1 ? kadinlar[(d * 2 - 1) % kadinlar.length].name : 'Kadın 2',
+          erkek1: erkekler.length > 0 ? erkekler[(d * 2 - 2) % erkekler.length].name : 'Atanmadı',
+          erkek2: erkekler.length > 1 ? erkekler[(d * 2 - 1) % erkekler.length].name : 'Atanmadı',
+          kadin1: kadinlar.length > 0 ? kadinlar[(d * 2 - 2) % kadinlar.length].name : 'Atanmadı',
+          kadin2: kadinlar.length > 1 ? kadinlar[(d * 2 - 1) % kadinlar.length].name : 'Atanmadı',
         });
       }
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Aylık nöbet oluşturuldu!', store });
-    }
-
-    if (action === 'bulk_monthly_duty') {
-      let count = 0;
-      if (Array.isArray(body.rows)) {
-        for (const r of body.rows) {
-          if (!r.tarih) continue;
-          const idx = store.aylikNobetler.findIndex((d) => d.tarih === String(r.tarih).trim());
-          const item = { tarih: String(r.tarih).trim(), erkek1: String(r.erkek1), erkek2: String(r.erkek2), kadin1: String(r.kadin1), kadin2: String(r.kadin2) };
-          if (idx > -1) store.aylikNobetler[idx] = item;
-          else store.aylikNobetler.push(item);
-          count++;
-        }
-        store.aylikNobetler.sort((a, b) => a.tarih.localeCompare(b.tarih));
-      }
-      await saveStore(store);
-      return NextResponse.json({ success: true, message: `${count} gün eklendi.`, store });
     }
 
     if (action === 'delete_monthly_duty') {
