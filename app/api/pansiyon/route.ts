@@ -49,14 +49,20 @@ const DEFAULT_STORE: StoreData = {
   aylikNobetler: [],
   leaves: [],
   dutyLogs: [],
-  auditLogs: [
-    { id: 'init1', tarihSaat: new Date().toLocaleString('tr-TR'), kullanici: 'Sistem', islem: 'Neon PostgreSQL Aktif', detay: '7/24 Kalıcı Bulut Veritabanı devreye alındı.', tur: 'basari' }
-  ],
+  auditLogs: [],
   updatedAt: Date.now(),
   tunnelUrl: ''
 };
 
-// NEON VERİTABANINDAN OKU (Tablo yoksa otomatik kurar)
+// Telefon numaralarını son 10 haneye (5XXXXXXXXX) göre normalize eder
+export function normalizePhone10(raw: any): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length >= 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
 async function getStore(): Promise<StoreData> {
   const sql = getSql();
   await sql`
@@ -78,7 +84,6 @@ async function getStore(): Promise<StoreData> {
   return rows[0].data as StoreData;
 }
 
-// NEON VERİTABANINA KALICI YAZ
 async function saveStore(store: StoreData): Promise<void> {
   const sql = getSql();
   store.updatedAt = Date.now();
@@ -124,6 +129,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const cinsiyetFilter = searchParams.get('cinsiyet');
+    const veliTelFilter = searchParams.get('veliTel');
     const store = await getStore();
 
     const headers = {
@@ -132,6 +138,33 @@ export async function GET(request: Request) {
       'Expires': '0',
     };
 
+    // 1) VELİ İZOLASYONU: Sadece velinin kendi telefon numarasıyla eşleşen öğrencileri ve izinleri döndür!
+    if (veliTelFilter) {
+      const targetPhone = normalizePhone10(veliTelFilter);
+      const myStudents = (store.students || []).filter((s) => {
+        const anneP = normalizePhone10(s.anneTel);
+        const babaP = normalizePhone10(s.babaTel);
+        return targetPhone.length === 10 && (anneP === targetPhone || babaP === targetPhone);
+      });
+      const myStudentIds = new Set(myStudents.map((s) => s.id));
+      const myLeaves = (store.leaves || []).filter((l) => myStudentIds.has(l.studentId));
+
+      return NextResponse.json({
+        success: true,
+        store: {
+          students: myStudents,
+          leaves: myLeaves,
+          belletmenler: [],
+          aylikNobetler: [],
+          dutyLogs: [],
+          auditLogs: [],
+          updatedAt: store.updatedAt,
+          tunnelUrl: store.tunnelUrl
+        }
+      }, { headers });
+    }
+
+    // 2) BELLETMEN CİNSİYET İZOLASYONU
     if (cinsiyetFilter === 'erkek' || cinsiyetFilter === 'kiz') {
       const filteredStudents = (store.students || []).filter((s) => s.cinsiyet === cinsiyetFilter);
       const allowedIds = new Set(filteredStudents.map((s) => s.id));
@@ -160,11 +193,29 @@ export async function POST(request: Request) {
     if (!store.leaves) store.leaves = [];
     if (!store.dutyLogs) store.dutyLogs = [];
 
-    // WhatsApp Botu açıldığında güncel Cloudflare Tünel URL'sini Neon DB'ye kaydeder
     if (action === 'update_tunnel_url') {
       store.tunnelUrl = String(body.tunnelUrl || '').trim();
       await saveStore(store);
       return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl });
+    }
+
+    // VELİ TELEFON DOĞRULAMA (Giriş yapmadan önce bu numaraya kayıtlı öğrenci var mı kontrol eder)
+    if (action === 'verify_parent_phone') {
+      const targetPhone = normalizePhone10(body.phone);
+      const matchedStudents = store.students.filter((s) => {
+        return targetPhone.length === 10 && (normalizePhone10(s.anneTel) === targetPhone || normalizePhone10(s.babaTel) === targetPhone);
+      });
+      if (matchedStudents.length === 0) {
+        return NextResponse.json({
+          success: false,
+          message: 'Bu telefon numarasına kayıtlı pansiyon öğrencisi bulunamadı! Lütfen okul idaresiyle iletişime geçin.'
+        }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        students: matchedStudents,
+        tunnelUrl: store.tunnelUrl
+      });
     }
 
     if (action === 'belletmen_login') {
@@ -225,7 +276,7 @@ export async function POST(request: Request) {
       store.students.push(newStudent);
       addLog(store, 'Yönetici', 'Öğrenci Eklendi', `${newStudent.name} (${newStudent.cinsiyet}) eklendi.`, 'basari');
       await saveStore(store);
-      return NextResponse.json({ success: true, message: `${newStudent.name} kalıcı bulut veritabanına eklendi!`, store });
+      return NextResponse.json({ success: true, message: `${newStudent.name} eklendi!`, store });
     }
 
     if (action === 'bulk_import') {
@@ -248,9 +299,9 @@ export async function POST(request: Request) {
           added++;
         }
       }
-      addLog(store, 'Yönetici', 'Toplu Öğrenci Yükleme', `${added} öğrenci Neon PostgreSQL veritabanına kaydedildi.`, 'basari');
+      addLog(store, 'Yönetici', 'Toplu Öğrenci Yükleme', `${added} öğrenci yüklendi.`, 'basari');
       await saveStore(store);
-      return NextResponse.json({ success: true, message: `${added} öğrenci kalıcı olarak kaydedildi ve tüm mobil cihazlarla senkronize edildi!`, store });
+      return NextResponse.json({ success: true, message: `${added} öğrenci kalıcı olarak kaydedildi!`, store });
     }
 
     if (action === 'delete_student') {
@@ -289,7 +340,7 @@ export async function POST(request: Request) {
         }
       }
       await saveStore(store);
-      return NextResponse.json({ success: true, message: `${added} belletmen kalıcı olarak eklendi!`, store });
+      return NextResponse.json({ success: true, message: `${added} belletmen eklendi!`, store });
     }
 
     if (action === 'update_belletmen_password') {
@@ -362,20 +413,96 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Nöbet silindi.', store });
     }
 
+    // VELİ İZİN EKLEME (Sadece velinin kendi öğrencisi için izin oluşturmasına izin verir)
     if (action === 'add_leave') {
       const { studentId, tip, baslangic, bitis, aciklama, veliTel } = body;
-      const st = store.students.find((s) => s.id === studentId) || store.students[0];
-      store.leaves.unshift({ id: Date.now().toString(), studentId: st.id, studentName: st.name, oda: st.oda, tip: tip || 'Evci İzni', baslangic, bitis, aciklama: aciklama || 'Veli talebi', veliTel: veliTel || st.anneTel, createdAt: new Date().toISOString().split('T')[0] });
+      const st = store.students.find((s) => s.id === studentId);
+      if (!st) {
+        return NextResponse.json({ success: false, message: 'Öğrenci bulunamadı!' }, { status: 404 });
+      }
+      if (veliTel) {
+        const pNorm = normalizePhone10(veliTel);
+        const isOwnChild = normalizePhone10(st.anneTel) === pNorm || normalizePhone10(st.babaTel) === pNorm;
+        if (!isOwnChild) {
+          return NextResponse.json({ success: false, message: 'Güvenlik Uyarısı: Sadece kendi öğrenciniz için izin talebi oluşturabilirsiniz!' }, { status: 403 });
+        }
+      }
+
+      store.leaves.unshift({
+        id: Date.now().toString(),
+        studentId: st.id,
+        studentName: st.name,
+        oda: st.oda,
+        tip: tip || 'Evci İzni',
+        baslangic,
+        bitis,
+        aciklama: aciklama || 'Veli talebi',
+        veliTel: veliTel || st.anneTel,
+        createdAt: new Date().toISOString().split('T')[0]
+      });
       st.status = 'izinli';
+      addLog(store, `Veli (${veliTel || st.anneTel})`, 'Veli İzin Talebi', `${st.name} için ${baslangic} - ${bitis} arası izin onaylandı.`, 'basari');
       await saveStore(store);
+
+      // Eğer veliTel ile geldiyse sadece kendi verisini döndür
+      if (veliTel) {
+        const pNorm = normalizePhone10(veliTel);
+        const myStudents = store.students.filter((s) => normalizePhone10(s.anneTel) === pNorm || normalizePhone10(s.babaTel) === pNorm);
+        const myIds = new Set(myStudents.map((s) => s.id));
+        const myLeaves = store.leaves.filter((l) => myIds.has(l.studentId));
+        return NextResponse.json({
+          success: true,
+          message: `${st.name} için izin talebiniz onaylandı ve belletmen ekranına işlendi!`,
+          store: { ...store, students: myStudents, leaves: myLeaves }
+        });
+      }
+
       return NextResponse.json({ success: true, message: 'İzin onaylandı.', store });
     }
 
+    // NÖBET DEFTERİ EKLEME VE İSİM DÜZENLEME
     if (action === 'add_duty_log') {
       const { tarih, seans, erkekBelletmen1, erkekBelletmen2, kizBelletmen1, kizBelletmen2, notlar } = body;
-      store.dutyLogs.unshift({ id: Date.now().toString(), tarih: String(tarih || ''), seans: String(seans || ''), erkekBelletmen1: String(erkekBelletmen1 || ''), erkekBelletmen2: String(erkekBelletmen2 || ''), kizBelletmen1: String(kizBelletmen1 || ''), kizBelletmen2: String(kizBelletmen2 || ''), notlar: String(notlar || '') });
+      store.dutyLogs.unshift({
+        id: Date.now().toString(),
+        tarih: String(tarih || ''),
+        seans: String(seans || ''),
+        erkekBelletmen1: String(erkekBelletmen1 || ''),
+        erkekBelletmen2: String(erkekBelletmen2 || ''),
+        kizBelletmen1: String(kizBelletmen1 || ''),
+        kizBelletmen2: String(kizBelletmen2 || ''),
+        notlar: String(notlar || '')
+      });
+      addLog(store, 'Nöbetçi Belletmen', 'Resmî Nöbet Tutanağı', `${tarih} (${seans}) nöbet defteri kaydedildi.`, 'basari');
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Nöbet defteri kaydedildi.', store });
+    }
+
+    if (action === 'update_duty_log') {
+      const { id, tarih, seans, erkekBelletmen1, erkekBelletmen2, kizBelletmen1, kizBelletmen2, notlar } = body;
+      const idx = store.dutyLogs.findIndex((l) => l.id === id);
+      if (idx > -1) {
+        store.dutyLogs[idx] = {
+          ...store.dutyLogs[idx],
+          tarih: String(tarih || store.dutyLogs[idx].tarih),
+          seans: String(seans || store.dutyLogs[idx].seans),
+          erkekBelletmen1: String(erkekBelletmen1 ?? ''),
+          erkekBelletmen2: String(erkekBelletmen2 ?? ''),
+          kizBelletmen1: String(kizBelletmen1 ?? ''),
+          kizBelletmen2: String(kizBelletmen2 ?? ''),
+          notlar: String(notlar ?? '')
+        };
+        addLog(store, 'Yönetici / Belletmen', 'Nöbet Defteri Düzenlendi', `${tarih} nöbet defteri belletmen isimleri/notları güncellendi.`, 'uyari');
+        await saveStore(store);
+        return NextResponse.json({ success: true, message: 'Nöbet defteri kaydı güncellendi!', store });
+      }
+      return NextResponse.json({ success: false, message: 'Nöbet defteri kaydı bulunamadı.' }, { status: 404 });
+    }
+
+    if (action === 'delete_duty_log') {
+      store.dutyLogs = store.dutyLogs.filter((l) => l.id !== body.id);
+      await saveStore(store);
+      return NextResponse.json({ success: true, message: 'Nöbet tutanağı silindi.', store });
     }
 
     if (action === 'clear_audit_logs') {
