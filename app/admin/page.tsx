@@ -85,10 +85,10 @@ export default function AdminPage() {
   const handleLoadSampleStudents = async () => {
     setLoading(true);
     const sampleRows = [
-      { name: 'Kerem Aksoy', cinsiyet: 'Erkek', kat: 1, oda: '101', anneAdi: 'sevgi Aksoy', anneTel: '05416571469', babaAdi: 'Murat Aksoy', babaTel: '05416571469' },
-      { name: 'Emirhan Yıldız', cinsiyet: 'Erkek', kat: 2, oda: '201', anneAdi: 'Seda Yıldız', anneTel: '05416571469', babaAdi: 'Orhan Yıldız', babaTel: '05416571469' },
-      { name: 'ZeynepSu Demir', cinsiyet: 'Kız', kat: 1, oda: 'K-101', anneAdi: 'Gül Demir', anneTel: '05416571469', babaAdi: 'Cüneyt Demir', babaTel: '05416571469' },
-      { name: 'Elif Naz Kaya', cinsiyet: 'Kız', kat: 2, oda: 'K-202', anneAdi: 'Ayşe Kaya', anneTel: '05416571469', babaAdi: 'Kemal Kaya', babaTel: '05416571469' }
+      { name: 'Kerem Aksoy', cinsiyet: 'Erkek', kat: 1, oda: '101', anneAdi: 'sevgi Aksoy', anneTel: '', babaAdi: 'Murat Aksoy', babaTel: '' },
+      { name: 'Emirhan Yıldız', cinsiyet: 'Erkek', kat: 2, oda: '201', anneAdi: 'Seda Yıldız', anneTel: '', babaAdi: 'Orhan Yıldız', babaTel: '' },
+      { name: 'ZeynepSu Demir', cinsiyet: 'Kız', kat: 1, oda: 'K-101', anneAdi: 'Gül Demir', anneTel: '', babaAdi: 'Cüneyt Demir', babaTel: '' },
+      { name: 'Elif Naz Kaya', cinsiyet: 'Kız', kat: 2, oda: 'K-202', anneAdi: 'Ayşe Kaya', anneTel: '', babaAdi: 'Kemal Kaya', babaTel: '' }
     ];
     const res = await fetch('/api/pansiyon', {
       method: 'POST',
