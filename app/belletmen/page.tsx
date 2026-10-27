@@ -13,7 +13,7 @@ export default function BelletmenPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  // Yoklama Tarih & Seans Seçimi (Veli geçmişine işlenmesi için)
+  // Yoklama Tarih & Seans Seçimi
   const [activeDate, setActiveDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [activeSeans, setActiveSeans] = useState('1. Etüt Yoklaması (19:30)');
   const [selectedKat, setSelectedKat] = useState<number | 'all'>('all');
@@ -21,6 +21,7 @@ export default function BelletmenPage() {
   const [activeTab, setActiveTab] = useState<'yoklama' | 'defter' | 'izinler'>('yoklama');
   const [saving, setSaving] = useState(false);
 
+  // Nöbet Defteri Ekleme ve Düzenleme Durumları
   const [dutyLogForm, setDutyLogForm] = useState({
     tarih: new Date().toISOString().split('T')[0],
     seans: 'Gece Yat Yoklaması (22:00)',
@@ -30,6 +31,7 @@ export default function BelletmenPage() {
     kizBelletmen2: '',
     notlar: ''
   });
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
   const loadData = async (genderFilter?: 'erkek' | 'kiz') => {
     const g = genderFilter || allowedGender;
@@ -190,19 +192,264 @@ export default function BelletmenPage() {
     }
   };
 
-  const handleSaveDutyLog = async (e: React.FormEvent) => {
+  const handleSaveOrUpdateDutyLog = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    const payload = editingLogId
+      ? { action: 'update_duty_log', id: editingLogId, ...dutyLogForm }
+      : { action: 'add_duty_log', ...dutyLogForm };
+
     const res = await fetch('/api/pansiyon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add_duty_log', ...dutyLogForm })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (data.success) {
-      setStore(data.store);
-      setDutyLogForm({ ...dutyLogForm, notlar: '' });
-      alert('Resmî nöbet tutanağı kaydedildi!');
+      await loadData(allowedGender);
+      setEditingLogId(null);
+      setDutyLogForm({
+        tarih: new Date().toISOString().split('T')[0],
+        seans: 'Gece Yat Yoklaması (22:00)',
+        erkekBelletmen1: '',
+        erkekBelletmen2: '',
+        kizBelletmen1: '',
+        kizBelletmen2: '',
+        notlar: ''
+      });
+      alert(editingLogId ? 'Nöbet defteri tutanağı güncellendi!' : 'Resmî nöbet tutanağı kaydedildi!');
     }
+    setSaving(false);
+  };
+
+  const startEditLog = (log: any) => {
+    setEditingLogId(log.id);
+    setDutyLogForm({
+      tarih: log.tarih || '',
+      seans: log.seans || 'Gece Yat Yoklaması (22:00)',
+      erkekBelletmen1: log.erkekBelletmen1 || '',
+      erkekBelletmen2: log.erkekBelletmen2 || '',
+      kizBelletmen1: log.kizBelletmen1 || '',
+      kizBelletmen2: log.kizBelletmen2 || '',
+      notlar: log.notlar || ''
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // =======================================================================
+  // RESMÎ MEB STANDARTLARINDA A4 NÖBET DEFTERİ PDF ÇIKTISI MOTORU
+  // =======================================================================
+  const handlePrintDutyLogPdf = (log: any) => {
+    const allStudents = (store?.students || []).filter((s: any) => s.cinsiyet === allowedGender);
+    const totalCount = allStudents.length;
+    const varCount = allStudents.filter((s: any) => s.status === 'var').length;
+    const izinCount = allStudents.filter((s: any) => s.status === 'izinli').length;
+    const yokStudents = allStudents.filter((s: any) => s.status === 'yok');
+
+    const yokListHtml = yokStudents.length === 0
+      ? '<tr><td colspan="3" style="text-align:center; padding:8px; color:#15803d; font-weight:bold;">Yoklamada devamsız (yok) öğrenci bulunmamaktadır.</td></tr>'
+      : yokStudents.map((s: any, idx: number) => `
+          <tr>
+            <td style="border:1px solid #cbd5e1; padding:6px; text-align:center;">${idx + 1}</td>
+            <td style="border:1px solid #cbd5e1; padding:6px; font-weight:bold;">${s.name}</td>
+            <td style="border:1px solid #cbd5e1; padding:6px; text-align:center;">${s.kat}. Kat / Oda ${s.oda}</td>
+          </tr>
+        `).join('');
+
+    const printWindow = window.open('', '_blank', 'width=900,height=1000');
+    if (!printWindow) {
+      alert('Lütfen tarayıcınızda açılır pencere (pop-up) izni verin.');
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="tr">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Pansiyon_Nobet_Defteri_${log.tarih}</title>
+        <style>
+          @page { size: A4; margin: 18mm; }
+          body {
+            font-family: "Times New Roman", Times, serif;
+            color: #0f172a;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #006bb6;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+          }
+          .header h1 { margin: 0; font-size: 16pt; font-weight: bold; text-transform: uppercase; }
+          .header h2 { margin: 4px 0 0; font-size: 13pt; font-weight: bold; color: #006bb6; }
+          .header p { margin: 4px 0 0; font-size: 11pt; font-weight: bold; }
+          .meta-table, .stats-table, .absent-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 11pt;
+          }
+          .meta-table td, .meta-table th,
+          .stats-table td, .stats-table th {
+            border: 1px solid #94a3b8;
+            padding: 8px 10px;
+          }
+          .meta-table th, .stats-table th {
+            background-color: #f1f5f9;
+            text-align: left;
+            font-weight: bold;
+          }
+          .section-title {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #006bb6;
+            margin: 16px 0 8px;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 4px;
+            text-transform: uppercase;
+          }
+          .notes-box {
+            border: 1px solid #94a3b8;
+            min-height: 160px;
+            padding: 12px;
+            font-size: 11pt;
+            white-space: pre-wrap;
+            background: #fafafa;
+          }
+          .signatures {
+            margin-top: 35px;
+            width: 100%;
+            border-collapse: collapse;
+            text-align: center;
+            font-size: 10.5pt;
+          }
+          .signatures td {
+            width: 25%;
+            padding: 10px 6px;
+            vertical-align: top;
+          }
+          .sig-line {
+            margin-top: 42px;
+            border-top: 1px dotted #475569;
+            padding-top: 4px;
+            font-weight: bold;
+          }
+          .approval {
+            margin-top: 35px;
+            text-align: center;
+            font-size: 11pt;
+          }
+          @media print {
+            .no-print { display: none !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="background:#006bb6; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; font-family:sans-serif; margin-bottom:20px; border-radius:8px;">
+          <span><strong>📄 Resmî Nöbet Defteri PDF Önizleme</strong> — Yazıcı hedefinden <strong>"PDF Olarak Kaydet"</strong> seçebilirsiniz.</span>
+          <button onclick="window.print()" style="background:white; color:#006bb6; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">🖨️ PDF İndir / Yazdır</button>
+        </div>
+
+        <div class="header">
+          <h1>T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
+          <h2>İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
+          <p>ÖĞRENCİ PANSİYONU GÜNLÜK NÖBETÇİ BELLETMEN TUTANAĞI</p>
+        </div>
+
+        <table class="meta-table">
+          <tr>
+            <th style="width:22%;">Nöbet Tarihi</th>
+            <td style="width:28%;"><strong>${log.tarih}</strong></td>
+            <th style="width:22%;">Yoklama Seansı</th>
+            <td style="width:28%;"><strong>${log.seans}</strong></td>
+          </tr>
+          <tr>
+            <th>Erkek Pansiyonu Nöbetçileri</th>
+            <td>${[log.erkekBelletmen1, log.erkekBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+            <th>Kız Pansiyonu Nöbetçileri</th>
+            <td>${[log.kizBelletmen1, log.kizBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+          </tr>
+        </table>
+
+        <div class="section-title">1. Pansiyon Yoklama ve Mevcut Özeti (${allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})</div>
+        <table class="stats-table">
+          <tr>
+            <th style="text-align:center;">Kayıtlı Toplam Öğrenci</th>
+            <th style="text-align:center;">Pansiyonda Mevcut (Var)</th>
+            <th style="text-align:center;">Evci / İzinli Öğrenci</th>
+            <th style="text-align:center;">Yoklamada Yok (Devamsız)</th>
+          </tr>
+          <tr>
+            <td style="text-align:center; font-weight:bold; font-size:13pt;">${totalCount}</td>
+            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#15803d;">${varCount}</td>
+            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#b45309;">${izinCount}</td>
+            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#b91c1c;">${yokStudents.length}</td>
+          </tr>
+        </table>
+
+        <div class="section-title">2. Yoklamada Bulunmayan (Devamsız) Öğrenciler</div>
+        <table class="absent-table">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #cbd5e1; padding:6px; width:12%;">Sıra</th>
+              <th style="border:1px solid #cbd5e1; padding:6px; text-align:left;">Öğrenci Adı Soyadı</th>
+              <th style="border:1px solid #cbd5e1; padding:6px; width:28%;">Kat / Oda No</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${yokListHtml}
+          </tbody>
+        </table>
+
+        <div class="section-title">3. Nöbet Vukuat Raporu, Etüt ve Gece Yoklaması Notları</div>
+        <div class="notes-box">${log.notlar || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}</div>
+
+        <table class="signatures">
+          <tr>
+            <td>
+              <div>Erkek Pansiyonu Nöbetçi Belletmen</div>
+              <div class="sig-line">${log.erkekBelletmen1 || '...........................'}</div>
+              <div style="font-size:9pt; color:#64748b;">İmza</div>
+            </td>
+            <td>
+              <div>Erkek Pansiyonu Nöbetçi Belletmen</div>
+              <div class="sig-line">${log.erkekBelletmen2 || '...........................'}</div>
+              <div style="font-size:9pt; color:#64748b;">İmza</div>
+            </td>
+            <td>
+              <div>Kız Pansiyonu Nöbetçi Belletmen</div>
+              <div class="sig-line">${log.kizBelletmen1 || '...........................'}</div>
+              <div style="font-size:9pt; color:#64748b;">İmza</div>
+            </td>
+            <td>
+              <div>Kız Pansiyonu Nöbetçi Belletmen</div>
+              <div class="sig-line">${log.kizBelletmen2 || '...........................'}</div>
+              <div style="font-size:9pt; color:#64748b;">İmza</div>
+            </td>
+          </tr>
+        </table>
+
+        <div class="approval">
+          <div><strong>KONTROL EDEN / ONAYLAYAN</strong></div>
+          <div style="margin-top:38px; font-weight:bold;">......................................................</div>
+          <div style="font-size:10pt;">Pansiyon Müdür Yardımcısı</div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() { window.print(); }, 350);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   if (!loggedBelletmen) {
@@ -277,38 +524,23 @@ export default function BelletmenPage() {
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => setActiveTab('yoklama')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'yoklama' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📋 Etüt & Yat Yoklaması ({allStudents.length})</button>
-          <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Pansiyon Nöbet Defteri ({store?.dutyLogs?.length || 0})</button>
+          <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Nöbet Defteri & PDF Çıktı ({store?.dutyLogs?.length || 0})</button>
           <button onClick={() => setActiveTab('izinler')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'izinler' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>🟡 İzinli Öğrenci Listesi ({store?.leaves?.length || 0})</button>
         </div>
 
         {activeTab === 'yoklama' && (
           <div className="space-y-4">
-            {/* AKTİF SEANS SEÇİCİ VE VELİ ARŞİVLEME ÇUBUĞU */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm flex flex-wrap justify-between items-center gap-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-extrabold text-slate-700">📅 Yoklama Seansı:</span>
-                <input
-                  type="date"
-                  value={activeDate}
-                  onChange={(e) => setActiveDate(e.target.value)}
-                  className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50"
-                />
-                <select
-                  value={activeSeans}
-                  onChange={(e) => setActiveSeans(e.target.value)}
-                  className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50 text-[#006bb6]"
-                >
+                <input type="date" value={activeDate} onChange={(e) => setActiveDate(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50" />
+                <select value={activeSeans} onChange={(e) => setActiveSeans(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50 text-[#006bb6]">
                   <option value="1. Etüt Yoklaması (19:30)">📚 1. Etüt Yoklaması (19:30)</option>
                   <option value="2. Etüt Yoklaması (20:30)">📚 2. Etüt Yoklaması (20:30)</option>
                   <option value="Gece Yat Yoklaması (22:00)">🌙 Gece Yat Yoklaması (22:00)</option>
                 </select>
               </div>
-              <button
-                type="button"
-                onClick={handleArchiveFullSession}
-                disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition"
-              >
+              <button type="button" onClick={handleArchiveFullSession} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition">
                 📥 Bu Seansın Yoklamasını Veli Geçmişine Kaydet
               </button>
             </div>
@@ -358,25 +590,93 @@ export default function BelletmenPage() {
           </div>
         )}
 
+        {/* NÖBET DEFTERİ EKLEME, DÜZENLEME VE RESMÎ PDF ÇIKTISI SEKMESİ */}
         {activeTab === 'defter' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm space-y-4">
-            <h2 className="text-base font-extrabold text-slate-900">📖 Resmî Pansiyon Nöbet Defteri Tutanağı Ekle</h2>
-            <form onSubmit={handleSaveDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-              <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl bg-slate-50" />
-              <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3 bg-slate-50">
-                <option value="1. Etüt Yoklaması (19:30)">1. Etüt Yoklaması (19:30)</option>
-                <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
-                <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
-              </select>
-              <input placeholder="Erkek Belletmen 1 Adı" value={dutyLogForm.erkekBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-slate-50" />
-              <input placeholder="Erkek Belletmen 2 Adı" value={dutyLogForm.erkekBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-slate-50" />
-              <input placeholder="Kız Belletmen 1 Adı" value={dutyLogForm.kizBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-slate-50" />
-              <input placeholder="Kız Belletmen 2 Adı" value={dutyLogForm.kizBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-slate-50" />
-              <textarea rows={3} placeholder="Nöbet vukuat ve yoklama notları..." value={dutyLogForm.notlar} onChange={(e) => setDutyLogForm({ ...dutyLogForm, notlar: e.target.value })} className="md:col-span-4 p-2.5 border rounded-xl bg-slate-50" />
-              <div className="md:col-span-4 flex justify-end">
-                <button type="submit" className="bg-[#006bb6] text-white px-6 py-2.5 rounded-xl font-bold">Tutanağı Kaydet</button>
+          <div className="space-y-6">
+            <div className={`p-6 rounded-2xl border border-t-4 shadow-sm space-y-4 ${editingLogId ? 'bg-amber-50 border-amber-300 border-t-amber-500' : 'bg-white border-slate-200 border-t-[#006bb6]'}`}>
+              <h2 className="text-base font-extrabold text-slate-900">
+                {editingLogId ? '✏️ Nöbet Defteri Kaydını ve Belletmen İsimlerini Düzenle' : '📖 Resmî Pansiyon Nöbet Defteri Tutanağı Yaz'}
+              </h2>
+              <form onSubmit={handleSaveOrUpdateDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3 bg-white">
+                  <option value="1. Etüt Yoklaması (19:30)">1. Etüt Yoklaması (19:30)</option>
+                  <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
+                  <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
+                </select>
+                <input placeholder="Erkek Belletmen 1 Adı" value={dutyLogForm.erkekBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                <input placeholder="Erkek Belletmen 2 Adı" value={dutyLogForm.erkekBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                <input placeholder="Kız Belletmen 1 Adı" value={dutyLogForm.kizBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                <input placeholder="Kız Belletmen 2 Adı" value={dutyLogForm.kizBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                <textarea rows={3} placeholder="Nöbet vukuat ve yoklama notları..." value={dutyLogForm.notlar} onChange={(e) => setDutyLogForm({ ...dutyLogForm, notlar: e.target.value })} className="md:col-span-4 p-2.5 border rounded-xl bg-white" />
+                <div className="md:col-span-4 flex justify-end gap-2">
+                  {editingLogId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingLogId(null);
+                        setDutyLogForm({ tarih: new Date().toISOString().split('T')[0], seans: 'Gece Yat Yoklaması (22:00)', erkekBelletmen1: '', erkekBelletmen2: '', kizBelletmen1: '', kizBelletmen2: '', notlar: '' });
+                      }}
+                      className="bg-slate-400 text-white px-5 py-2.5 rounded-xl font-bold"
+                    >
+                      İptal
+                    </button>
+                  )}
+                  <button type="submit" className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow">
+                    {editingLogId ? '💾 Değişiklikleri Kaydet' : '✅ Tutanağı Kaydet'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* KAYITLI NÖBET DEFTERİ LİSTESİ VE PDF ÇIKTI BUTONLARI */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-extrabold text-slate-900">
+                  🗂️ Kaydedilen Nöbet Defteri Tutanakları ({store?.dutyLogs?.length || 0})
+                </h3>
+                <span className="text-xs text-slate-500">Herhangi bir kaydın sağındaki butondan A4 PDF çıktısı alabilirsiniz.</span>
               </div>
-            </form>
+
+              {(store?.dutyLogs || []).length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-4">Henüz kaydedilmiş bir nöbet tutanağı bulunmamaktadır.</p>
+              ) : (
+                <div className="space-y-3">
+                  {(store?.dutyLogs || []).map((log: any) => (
+                    <div key={log.id} className="p-4 border border-slate-200 rounded-2xl bg-slate-50 space-y-3 text-xs">
+                      <div className="flex flex-wrap justify-between items-center gap-2">
+                        <span className="font-extrabold text-sm text-[#006bb6]">
+                          📅 {log.tarih} — {log.seans}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditLog(log)}
+                            className="bg-amber-100 hover:bg-amber-500 hover:text-white text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl font-bold transition"
+                          >
+                            ✏️ İsimleri / Notu Düzenle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePrintDutyLogPdf(log)}
+                            className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-1.5 rounded-xl font-bold shadow-sm transition flex items-center gap-1.5"
+                          >
+                            🖨️ Resmî PDF Çıktısı Al
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200">
+                        <div><strong>👨 Erkek Pansiyonu Nöbetçileri:</strong> {log.erkekBelletmen1 || '-'}, {log.erkekBelletmen2 || '-'}</div>
+                        <div><strong>👩 Kız Pansiyonu Nöbetçileri:</strong> {log.kizBelletmen1 || '-'}, {log.kizBelletmen2 || '-'}</div>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-700">
+                        <strong>Vukuat / Nöbet Notu:</strong> {log.notlar || 'Normal.'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
