@@ -24,6 +24,18 @@ export interface LeaveRecord { id: string; studentId: string; studentName: strin
 export interface DutyLogRecord { id: string; tarih: string; seans: string; erkekBelletmen1: string; erkekBelletmen2: string; kizBelletmen1: string; kizBelletmen2: string; notlar: string; }
 export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
 
+export interface AttendanceHistoryRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  oda: string;
+  tarih: string;
+  saat: string;
+  seans: string;
+  status: 'var' | 'yok' | 'izinli';
+  belletmenName: string;
+}
+
 export interface StoreData {
   students: StudentRecord[];
   belletmenler: BelletmenRecord[];
@@ -31,6 +43,7 @@ export interface StoreData {
   leaves: LeaveRecord[];
   dutyLogs: DutyLogRecord[];
   auditLogs: AuditLogRecord[];
+  attendanceHistory: AttendanceHistoryRecord[];
   updatedAt: number;
   tunnelUrl?: string;
 }
@@ -42,6 +55,7 @@ const DEFAULT_STORE: StoreData = {
   leaves: [],
   dutyLogs: [],
   auditLogs: [],
+  attendanceHistory: [],
   updatedAt: Date.now(),
   tunnelUrl: ''
 };
@@ -72,7 +86,9 @@ async function getStore(): Promise<StoreData> {
     `;
     return initial;
   }
-  return rows[0].data as StoreData;
+  const store = rows[0].data as StoreData;
+  if (!store.attendanceHistory) store.attendanceHistory = [];
+  return store;
 }
 
 async function saveStore(store: StoreData): Promise<void> {
@@ -129,6 +145,7 @@ export async function GET(request: Request) {
       'Expires': '0',
     };
 
+    // VELİ İZOLASYONU: Sadece velinin kendi öğrencisini, kendi izinlerini ve kendi etüt/yat yoklama geçmişini döndürür
     if (veliTelFilter) {
       const targetPhone = normalizePhone10(veliTelFilter);
       const myStudents = (store.students || []).filter((s) => {
@@ -138,12 +155,14 @@ export async function GET(request: Request) {
       });
       const myStudentIds = new Set(myStudents.map((s) => s.id));
       const myLeaves = (store.leaves || []).filter((l) => myStudentIds.has(l.studentId));
+      const myAttendanceHistory = (store.attendanceHistory || []).filter((h) => myStudentIds.has(h.studentId));
 
       return NextResponse.json({
         success: true,
         store: {
           students: myStudents,
           leaves: myLeaves,
+          attendanceHistory: myAttendanceHistory,
           belletmenler: [],
           aylikNobetler: [],
           dutyLogs: [],
@@ -158,9 +177,10 @@ export async function GET(request: Request) {
       const filteredStudents = (store.students || []).filter((s) => s.cinsiyet === cinsiyetFilter);
       const allowedIds = new Set(filteredStudents.map((s) => s.id));
       const filteredLeaves = (store.leaves || []).filter((l) => allowedIds.has(l.studentId));
+      const filteredHistory = (store.attendanceHistory || []).filter((h) => allowedIds.has(h.studentId));
       return NextResponse.json({
         success: true,
-        store: { ...store, students: filteredStudents, leaves: filteredLeaves }
+        store: { ...store, students: filteredStudents, leaves: filteredLeaves, attendanceHistory: filteredHistory }
       }, { headers });
     }
 
@@ -181,6 +201,7 @@ export async function POST(request: Request) {
     if (!store.aylikNobetler) store.aylikNobetler = [];
     if (!store.leaves) store.leaves = [];
     if (!store.dutyLogs) store.dutyLogs = [];
+    if (!store.attendanceHistory) store.attendanceHistory = [];
 
     if (action === 'update_tunnel_url') {
       store.tunnelUrl = String(body.tunnelUrl || '').trim();
@@ -248,18 +269,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Hatalı yönetici şifresi!' }, { status: 401 });
     }
 
+    // ANLIK YOKLAMA DEĞİŞİMİ + ETÜT/YAT YOKLAMA GEÇMİŞİNE KAYIT
     if (action === 'update_attendance') {
+      const tarih = body.tarih || new Date().toISOString().split('T')[0];
+      const seans = body.seans || 'Gece Yat Yoklaması (22:00)';
+      const belletmenName = body.belletmenName || 'Nöbetçi Belletmen';
+      const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
       if (Array.isArray(body.students)) {
         const updatedMap = new Map(body.students.map((s: StudentRecord) => [s.id, s]));
         store.students = store.students.map((existing) =>
           updatedMap.has(existing.id) ? (updatedMap.get(existing.id) as StudentRecord) : existing
         );
-        await saveStore(store);
       }
-      return NextResponse.json({ success: true, message: 'Yoklama buluta kaydedildi.', store });
+
+      // Tek bir öğrenci tıklandıysa veya toplu seans kaydedildiyse geçmişe (attendanceHistory) işle
+      const recordsToArchive: StudentRecord[] = body.changedStudent
+        ? [body.changedStudent]
+        : (body.archiveAll && Array.isArray(body.students) ? body.students : []);
+
+      for (const st of recordsToArchive) {
+        if (!st || !st.id) continue;
+        const existingIdx = store.attendanceHistory.findIndex(
+          (h) => h.studentId === st.id && h.tarih === tarih && h.seans === seans
+        );
+        const item: AttendanceHistoryRecord = {
+          id: existingIdx > -1 ? store.attendanceHistory[existingIdx].id : (Date.now() + Math.random()).toString(),
+          studentId: st.id,
+          studentName: st.name,
+          oda: st.oda,
+          tarih,
+          saat,
+          seans,
+          status: st.status,
+          belletmenName
+        };
+        if (existingIdx > -1) {
+          store.attendanceHistory[existingIdx] = item;
+        } else {
+          store.attendanceHistory.unshift(item);
+        }
+      }
+
+      if (store.attendanceHistory.length > 3000) {
+        store.attendanceHistory = store.attendanceHistory.slice(0, 3000);
+      }
+
+      if (body.archiveAll) {
+        addLog(store, belletmenName, 'Yoklama Arşivlendi', `${tarih} - ${seans} yoklaması veli portalı geçmişine işlendi.`, 'basari');
+      }
+
+      await saveStore(store);
+      return NextResponse.json({ success: true, message: 'Yoklama ve geçmiş kaydı güncellendi.', store });
     }
 
-    // ÖĞRENCİ EKLEME (Numara boşsa kesinlikle boş bırakılır, kendi numaranız atanmaz!)
     if (action === 'add_student') {
       const newStudent: StudentRecord = {
         id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
@@ -306,6 +369,7 @@ export async function POST(request: Request) {
 
     if (action === 'delete_student') {
       store.students = store.students.filter((s) => s.id !== body.id);
+      store.attendanceHistory = store.attendanceHistory.filter((h) => h.studentId !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
     }
@@ -313,6 +377,7 @@ export async function POST(request: Request) {
     if (action === 'clear_all_students') {
       store.students = [];
       store.leaves = [];
+      store.attendanceHistory = [];
       addLog(store, 'Yönetici', 'Öğrenci Listesi Sıfırlandı', 'Tüm öğrenci kayıtları temizlendi.', 'uyari');
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Tüm öğrenci listesi temizlendi.', store });
@@ -377,27 +442,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Nöbet kaydedildi.', store });
     }
 
-    if (action === 'auto_generate_month_duty') {
-      const yearMonth = String(body.yearMonth);
-      const [yStr, mStr] = yearMonth.split('-');
-      const days = new Date(Number(yStr), Number(mStr), 0).getDate();
-      const erkekler = store.belletmenler.filter((b) => b.cinsiyet === 'erkek');
-      const kadinlar = store.belletmenler.filter((b) => b.cinsiyet === 'kadin');
-      store.aylikNobetler = store.aylikNobetler.filter((d) => !d.tarih.startsWith(yearMonth));
-      for (let d = 1; d <= days; d++) {
-        const dateKey = `${yearMonth}-${d < 10 ? '0'+d : d}`;
-        store.aylikNobetler.push({
-          tarih: dateKey,
-          erkek1: erkekler.length > 0 ? erkekler[(d * 2 - 2) % erkekler.length].name : 'Atanmadı',
-          erkek2: erkekler.length > 1 ? erkekler[(d * 2 - 1) % erkekler.length].name : 'Atanmadı',
-          kadin1: kadinlar.length > 0 ? kadinlar[(d * 2 - 2) % kadinlar.length].name : 'Atanmadı',
-          kadin2: kadinlar.length > 1 ? kadinlar[(d * 2 - 1) % kadinlar.length].name : 'Atanmadı',
-        });
-      }
-      await saveStore(store);
-      return NextResponse.json({ success: true, message: 'Aylık nöbet oluşturuldu!', store });
-    }
-
     if (action === 'delete_monthly_duty') {
       store.aylikNobetler = store.aylikNobetler.filter((d) => d.tarih !== body.tarih);
       await saveStore(store);
@@ -439,10 +483,11 @@ export async function POST(request: Request) {
         const myStudents = store.students.filter((s) => normalizePhone10(s.anneTel) === pNorm || normalizePhone10(s.babaTel) === pNorm);
         const myIds = new Set(myStudents.map((s) => s.id));
         const myLeaves = store.leaves.filter((l) => myIds.has(l.studentId));
+        const myAttendanceHistory = store.attendanceHistory.filter((h) => myIds.has(h.studentId));
         return NextResponse.json({
           success: true,
           message: `${st.name} için izin talebiniz onaylandı!`,
-          store: { ...store, students: myStudents, leaves: myLeaves }
+          store: { ...store, students: myStudents, leaves: myLeaves, attendanceHistory: myAttendanceHistory }
         });
       }
 

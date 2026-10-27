@@ -5,6 +5,7 @@ import SblLogo from './components/SblLogo';
 
 interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string; anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: 'var' | 'yok' | 'izinli'; }
 interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
+interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string; }
 
 export default function UnifiedHomePortal() {
   const router = useRouter();
@@ -20,9 +21,15 @@ export default function UnifiedHomePortal() {
   const [selectedBelId, setSelectedBelId] = useState('');
   const [belPassword, setBelPassword] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+
+  // Veliye özel veriler
   const [myStudents, setMyStudents] = useState<StudentRecord[]>([]);
   const [myLeaves, setMyLeaves] = useState<LeaveRecord[]>([]);
+  const [myHistory, setMyHistory] = useState<AttendanceHistoryRecord[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'etut' | 'yat'>('all');
+
+  // İzin Formu
   const [leaveType, setLeaveType] = useState('Hafta Sonu Evci İzni');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -45,8 +52,15 @@ export default function UnifiedHomePortal() {
       const data = await res.json();
       if (data.success && data.store) {
         const list: StudentRecord[] = data.store.students || [];
-        if (list.length === 0) { sessionStorage.removeItem('pansiyon_veli_tel'); setStep('phone'); setErrorMsg('Adınıza kayıtlı öğrenci gözükmemektedir'); return; }
-        setMyStudents(list); setMyLeaves(data.store.leaves || []);
+        if (list.length === 0) {
+          sessionStorage.removeItem('pansiyon_veli_tel');
+          setStep('phone');
+          setErrorMsg('Adınıza kayıtlı öğrenci gözükmemektedir');
+          return;
+        }
+        setMyStudents(list);
+        setMyLeaves(data.store.leaves || []);
+        setMyHistory(data.store.attendanceHistory || []);
         if (!selectedStudentId) setSelectedStudentId(list[0].id);
       }
     } catch (e) {}
@@ -106,16 +120,31 @@ export default function UnifiedHomePortal() {
     try {
       const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_leave', studentId: selectedStudentId, tip: leaveType, baslangic: startDate, bitis: endDate, aciklama: leaveNote || 'Veli Portalı üzerinden izin talebi', veliTel: phone }) });
       const data = await res.json();
-      if (data.success) { setMyStudents(data.store.students || []); setMyLeaves(data.store.leaves || []); setStartDate(''); setEndDate(''); setLeaveNote(''); alert(data.message || 'İzin talebiniz başarıyla kaydedildi!'); }
-      else { alert(data.message || 'İzin kaydedilemedi.'); }
+      if (data.success) {
+        setMyStudents(data.store.students || []);
+        setMyLeaves(data.store.leaves || []);
+        setMyHistory(data.store.attendanceHistory || []);
+        setStartDate(''); setEndDate(''); setLeaveNote('');
+        alert(data.message || 'İzin talebiniz başarıyla kaydedildi!');
+      } else { alert(data.message || 'İzin kaydedilemedi.'); }
     } catch { alert('Bağlantı hatası!'); }
     setLoading(false);
   };
 
-  const handleLogout = () => { sessionStorage.removeItem('pansiyon_veli_tel'); setStep('phone'); setMyStudents([]); setMyLeaves([]); setOtpInput(''); setGeneratedOtp(''); setInfoMsg(''); setErrorMsg(''); };
+  const handleLogout = () => { sessionStorage.removeItem('pansiyon_veli_tel'); setStep('phone'); setMyStudents([]); setMyLeaves([]); setMyHistory([]); setOtpInput(''); setGeneratedOtp(''); setInfoMsg(''); setErrorMsg(''); };
 
   const activeStudent = myStudents.find((s) => s.id === selectedStudentId) || myStudents[0];
   const activeStudentLeaves = myLeaves.filter((l) => activeStudent && l.studentId === activeStudent.id);
+  const activeStudentHistory = myHistory.filter((h) => activeStudent && h.studentId === activeStudent.id);
+
+  const filteredHistory = activeStudentHistory.filter((h) => {
+    if (historyFilter === 'etut') return h.seans.toLowerCase().includes('etüt') || h.seans.toLowerCase().includes('etut');
+    if (historyFilter === 'yat') return h.seans.toLowerCase().includes('yat') || h.seans.toLowerCase().includes('gece');
+    return true;
+  });
+
+  const presentCount = activeStudentHistory.filter((h) => h.status === 'var').length;
+  const absentCount = activeStudentHistory.filter((h) => h.status === 'yok').length;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col justify-between">
@@ -209,14 +238,14 @@ export default function UnifiedHomePortal() {
             </div>
           </div>
         ) : (
-          <div className="max-w-5xl w-full space-y-6">
+          <div className="max-w-6xl w-full space-y-6">
             <div className="bg-white border-t-4 border-t-[#006bb6] border-x border-b border-slate-200 rounded-2xl p-5 shadow-sm flex flex-wrap justify-between items-center gap-4">
               <div>
                 <span className="text-xs font-bold uppercase text-emerald-600">✅ Doğrulanmış Veli Oturumu ({phone})</span>
-                <h2 className="text-xl font-extrabold text-slate-900">Öğrenci Bilgileri ve İzin Paneli</h2>
+                <h2 className="text-xl font-extrabold text-slate-900">Öğrenci Bilgileri, Etüt/Yat Yoklama Geçmişi ve İzin Paneli</h2>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => loadParentData(phone)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold border">🔄 Yenile</button>
+                <button onClick={() => loadParentData(phone)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold border">🔄 Bilgileri Yenile</button>
                 <button onClick={handleLogout} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold">Çıkış Yap</button>
               </div>
             </div>
@@ -231,52 +260,148 @@ export default function UnifiedHomePortal() {
 
             {activeStudent && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+                {/* SOL KOLON: ÖĞRENCİ BİLGİLERİ VE YOKLAMA İSTATİSTİKLERİ */}
+                <div className="bg-white border border-slate-200 border-t-4 border-t-[#006bb6] rounded-2xl shadow-sm p-6 space-y-4 h-fit">
                   <div className="flex items-center justify-between border-b pb-3">
                     <div>
                       <span className="text-[11px] font-bold uppercase text-[#006bb6]">Öğrenciniz</span>
                       <h3 className="text-xl font-extrabold text-slate-900">{activeStudent.name}</h3>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${activeStudent.status === 'var' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : activeStudent.status === 'izinli' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
-                      {activeStudent.status === 'var' ? '🟢 Yurtta' : activeStudent.status === 'izinli' ? '🟡 İzinli' : '🔴 Devamsız'}
+                      {activeStudent.status === 'var' ? '🟢 Yurtta (Var)' : activeStudent.status === 'izinli' ? '🟡 İzinli' : '🔴 Devamsız'}
                     </span>
                   </div>
+
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <span className="text-slate-500 block">Pansiyon Bloğu</span><strong className="text-slate-800">{activeStudent.cinsiyet === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'}</strong>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <span className="text-slate-500 block">Pansiyon Bloğu</span>
+                      <strong className="text-slate-800">{activeStudent.cinsiyet === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'}</strong>
                     </div>
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <span className="text-slate-500 block">Kat / Oda</span><strong className="text-slate-800">{activeStudent.kat}. Kat - Oda {activeStudent.oda}</strong>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <span className="text-slate-500 block">Kat / Oda</span>
+                      <strong className="text-slate-800">{activeStudent.kat}. Kat - Oda {activeStudent.oda}</strong>
                     </div>
-                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 col-span-2 text-center">
-                      <span className="text-[#006bb6] block mb-1">Toplam Kullanılan İzin</span><strong className="text-lg font-extrabold text-[#006bb6]">{activeStudentLeaves.length} İzin Kaydı</strong>
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
+                      <span className="text-emerald-700 block font-semibold">Katıldığı Etüt/Yat</span>
+                      <strong className="text-lg font-black text-emerald-900">{presentCount} Yoklama</strong>
+                    </div>
+                    <div className="bg-rose-50 p-3 rounded-xl border border-rose-200 text-center">
+                      <span className="text-rose-700 block font-semibold">Yoklamada Yok</span>
+                      <strong className="text-lg font-black text-rose-900">{absentCount} Kez</strong>
+                    </div>
+                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 col-span-2 text-center">
+                      <span className="text-[#006bb6] block font-semibold">Toplam Kullanılan İzin</span>
+                      <strong className="text-base font-extrabold text-[#006bb6]">{activeStudentLeaves.length} İzin Kaydı</strong>
                     </div>
                   </div>
                 </div>
 
+                {/* SAĞ KOLON: GEÇMİŞ ETÜT & YAT YOKLAMALARI + İZİN TALEBİ */}
                 <div className="lg:col-span-2 space-y-6">
+                  {/* 1) GEÇMİŞ ETÜT VE YAT YOKLAMALARI TABLOSU */}
+                  <div className="bg-white border border-slate-200 border-t-4 border-t-[#006bb6] rounded-2xl shadow-sm overflow-hidden">
+                    <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                      <div>
+                        <h3 className="text-base font-extrabold text-slate-900">
+                          📋 {activeStudent.name} — Geçmiş Etüt & Gece Yat Yoklamaları
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Belletmen öğretmenler tarafından alınan etüt ve gece yat yoklama kayıtları
+                        </p>
+                      </div>
+                      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold border">
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFilter('all')}
+                          className={`px-3 py-1.5 rounded-lg transition ${historyFilter === 'all' ? 'bg-[#006bb6] text-white' : 'text-slate-600'}`}
+                        >
+                          Tümü ({activeStudentHistory.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFilter('etut')}
+                          className={`px-3 py-1.5 rounded-lg transition ${historyFilter === 'etut' ? 'bg-[#006bb6] text-white' : 'text-slate-600'}`}
+                        >
+                          Etütler
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFilter('yat')}
+                          className={`px-3 py-1.5 rounded-lg transition ${historyFilter === 'yat' ? 'bg-[#006bb6] text-white' : 'text-slate-600'}`}
+                        >
+                          Gece Yat
+                        </button>
+                      </div>
+                    </div>
+
+                    {filteredHistory.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-slate-400 italic">
+                        Öğrencinize ait geçmiş etüt veya yat yoklama kaydı henüz bulunmamaktadır.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-80">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#006bb6] text-white sticky top-0">
+                            <tr>
+                              <th className="p-3">Tarih / Saat</th>
+                              <th className="p-3">Yoklama Seansı (Etüt / Yat)</th>
+                              <th className="p-3">Yoklama Durumu</th>
+                              <th className="p-3">Nöbetçi Belletmen</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredHistory.map((h) => (
+                              <tr key={h.id} className="hover:bg-slate-50">
+                                <td className="p-3 font-bold text-slate-800 whitespace-nowrap">
+                                  {h.tarih} <span className="text-[10px] text-slate-400 ml-1">{h.saat}</span>
+                                </td>
+                                <td className="p-3 font-semibold text-slate-700">{h.seans}</td>
+                                <td className="p-3">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
+                                      h.status === 'var'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : h.status === 'izinli'
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-rose-100 text-rose-800'
+                                    }`}
+                                  >
+                                    {h.status === 'var' ? '🟢 VAR' : h.status === 'izinli' ? '🟡 İZİNLİ' : '🔴 YOK'}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-slate-600">{h.belletmenName || 'Nöbetçi Öğretmen'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2) YENİ İZİN TALEBİ FORMU */}
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
                     <h3 className="text-base font-extrabold text-slate-900 mb-1">📝 Yeni İzin Talebi Gönder</h3>
                     <form onSubmit={handleCreateLeave} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs mt-4">
                       <div>
                         <label className="font-bold text-slate-600 block mb-1">İzin Türü</label>
-                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-[#006bb6] transition">
+                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl font-bold bg-slate-50 focus:bg-white">
                           <option value="Hafta Sonu Evci İzni">Hafta Sonu Evci İzni</option>
                           <option value="Aile Yanı Ev İzni">Aile Yanı Ev İzni</option>
                           <option value="Sağlık / Hastane İzni">Sağlık / Hastane İzni</option>
+                          <option value="Çarşı / Kurs İzni">Çarşı / Kurs İzni</option>
                         </select>
                       </div>
                       <div>
                         <label className="font-bold text-slate-600 block mb-1">Başlangıç Tarihi</label>
-                        <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white transition" />
+                        <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white" />
                       </div>
                       <div className="md:col-span-2">
                         <label className="font-bold text-slate-600 block mb-1">Dönüş Tarihi</label>
-                        <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white transition" />
+                        <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white" />
                       </div>
                       <div className="md:col-span-2">
                         <label className="font-bold text-slate-600 block mb-1">Açıklama / Adres</label>
-                        <input type="text" required placeholder="Gidilecek adres veya kısa açıklama..." value={leaveNote} onChange={(e) => setLeaveNote(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white transition" />
+                        <input type="text" required placeholder="Gidilecek adres veya kısa açıklama..." value={leaveNote} onChange={(e) => setLeaveNote(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white" />
                       </div>
                       <div className="md:col-span-2 flex justify-end">
                         <button type="submit" disabled={loading} className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition">{loading ? 'Kaydediliyor...' : '✅ İzin Talebini Onayla'}</button>
@@ -284,6 +409,7 @@ export default function UnifiedHomePortal() {
                     </form>
                   </div>
 
+                  {/* 3) GEÇMİŞ İZİNLER */}
                   <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
                     <h3 className="text-base font-extrabold text-slate-900 mb-3">📅 {activeStudent.name} Geçmiş İzinleri ({activeStudentLeaves.length})</h3>
                     {activeStudentLeaves.length === 0 ? (
