@@ -13,7 +13,6 @@ export default function BelletmenPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  // Yoklama Tarih & Seans Seçimi
   const [activeDate, setActiveDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [activeSeans, setActiveSeans] = useState('1. Etüt Yoklaması (19:30)');
   const [selectedKat, setSelectedKat] = useState<number | 'all'>('all');
@@ -21,7 +20,6 @@ export default function BelletmenPage() {
   const [activeTab, setActiveTab] = useState<'yoklama' | 'defter' | 'izinler'>('yoklama');
   const [saving, setSaving] = useState(false);
 
-  // Nöbet Defteri Ekleme ve Düzenleme Durumları
   const [dutyLogForm, setDutyLogForm] = useState({
     tarih: new Date().toISOString().split('T')[0],
     seans: 'Gece Yat Yoklaması (22:00)',
@@ -32,6 +30,9 @@ export default function BelletmenPage() {
     notlar: ''
   });
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
+
+  // PDF Önizleme Modalı İçin Durum
+  const [pdfModalLog, setPdfModalLog] = useState<any>(null);
 
   const loadData = async (genderFilter?: 'erkek' | 'kiz') => {
     const g = genderFilter || allowedGender;
@@ -236,222 +237,6 @@ export default function BelletmenPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // =======================================================================
-  // RESMÎ MEB STANDARTLARINDA A4 NÖBET DEFTERİ PDF ÇIKTISI MOTORU
-  // =======================================================================
-  const handlePrintDutyLogPdf = (log: any) => {
-    const allStudents = (store?.students || []).filter((s: any) => s.cinsiyet === allowedGender);
-    const totalCount = allStudents.length;
-    const varCount = allStudents.filter((s: any) => s.status === 'var').length;
-    const izinCount = allStudents.filter((s: any) => s.status === 'izinli').length;
-    const yokStudents = allStudents.filter((s: any) => s.status === 'yok');
-
-    const yokListHtml = yokStudents.length === 0
-      ? '<tr><td colspan="3" style="text-align:center; padding:8px; color:#15803d; font-weight:bold;">Yoklamada devamsız (yok) öğrenci bulunmamaktadır.</td></tr>'
-      : yokStudents.map((s: any, idx: number) => `
-          <tr>
-            <td style="border:1px solid #cbd5e1; padding:6px; text-align:center;">${idx + 1}</td>
-            <td style="border:1px solid #cbd5e1; padding:6px; font-weight:bold;">${s.name}</td>
-            <td style="border:1px solid #cbd5e1; padding:6px; text-align:center;">${s.kat}. Kat / Oda ${s.oda}</td>
-          </tr>
-        `).join('');
-
-    const printWindow = window.open('', '_blank', 'width=900,height=1000');
-    if (!printWindow) {
-      alert('Lütfen tarayıcınızda açılır pencere (pop-up) izni verin.');
-      return;
-    }
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="tr">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Pansiyon_Nobet_Defteri_${log.tarih}</title>
-        <style>
-          @page { size: A4; margin: 18mm; }
-          body {
-            font-family: "Times New Roman", Times, serif;
-            color: #0f172a;
-            line-height: 1.5;
-            margin: 0;
-            padding: 0;
-          }
-          .header {
-            text-align: center;
-            border-bottom: 2px solid #006bb6;
-            padding-bottom: 12px;
-            margin-bottom: 20px;
-          }
-          .header h1 { margin: 0; font-size: 16pt; font-weight: bold; text-transform: uppercase; }
-          .header h2 { margin: 4px 0 0; font-size: 13pt; font-weight: bold; color: #006bb6; }
-          .header p { margin: 4px 0 0; font-size: 11pt; font-weight: bold; }
-          .meta-table, .stats-table, .absent-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 18px;
-            font-size: 11pt;
-          }
-          .meta-table td, .meta-table th,
-          .stats-table td, .stats-table th {
-            border: 1px solid #94a3b8;
-            padding: 8px 10px;
-          }
-          .meta-table th, .stats-table th {
-            background-color: #f1f5f9;
-            text-align: left;
-            font-weight: bold;
-          }
-          .section-title {
-            font-size: 12pt;
-            font-weight: bold;
-            color: #006bb6;
-            margin: 16px 0 8px;
-            border-bottom: 1px solid #cbd5e1;
-            padding-bottom: 4px;
-            text-transform: uppercase;
-          }
-          .notes-box {
-            border: 1px solid #94a3b8;
-            min-height: 160px;
-            padding: 12px;
-            font-size: 11pt;
-            white-space: pre-wrap;
-            background: #fafafa;
-          }
-          .signatures {
-            margin-top: 35px;
-            width: 100%;
-            border-collapse: collapse;
-            text-align: center;
-            font-size: 10.5pt;
-          }
-          .signatures td {
-            width: 25%;
-            padding: 10px 6px;
-            vertical-align: top;
-          }
-          .sig-line {
-            margin-top: 42px;
-            border-top: 1px dotted #475569;
-            padding-top: 4px;
-            font-weight: bold;
-          }
-          .approval {
-            margin-top: 35px;
-            text-align: center;
-            font-size: 11pt;
-          }
-          @media print {
-            .no-print { display: none !important; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="no-print" style="background:#006bb6; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; font-family:sans-serif; margin-bottom:20px; border-radius:8px;">
-          <span><strong>📄 Resmî Nöbet Defteri PDF Önizleme</strong> — Yazıcı hedefinden <strong>"PDF Olarak Kaydet"</strong> seçebilirsiniz.</span>
-          <button onclick="window.print()" style="background:white; color:#006bb6; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">🖨️ PDF İndir / Yazdır</button>
-        </div>
-
-        <div class="header">
-          <h1>T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
-          <h2>İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
-          <p>ÖĞRENCİ PANSİYONU GÜNLÜK NÖBETÇİ BELLETMEN TUTANAĞI</p>
-        </div>
-
-        <table class="meta-table">
-          <tr>
-            <th style="width:22%;">Nöbet Tarihi</th>
-            <td style="width:28%;"><strong>${log.tarih}</strong></td>
-            <th style="width:22%;">Yoklama Seansı</th>
-            <td style="width:28%;"><strong>${log.seans}</strong></td>
-          </tr>
-          <tr>
-            <th>Erkek Pansiyonu Nöbetçileri</th>
-            <td>${[log.erkekBelletmen1, log.erkekBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
-            <th>Kız Pansiyonu Nöbetçileri</th>
-            <td>${[log.kizBelletmen1, log.kizBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
-          </tr>
-        </table>
-
-        <div class="section-title">1. Pansiyon Yoklama ve Mevcut Özeti (${allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})</div>
-        <table class="stats-table">
-          <tr>
-            <th style="text-align:center;">Kayıtlı Toplam Öğrenci</th>
-            <th style="text-align:center;">Pansiyonda Mevcut (Var)</th>
-            <th style="text-align:center;">Evci / İzinli Öğrenci</th>
-            <th style="text-align:center;">Yoklamada Yok (Devamsız)</th>
-          </tr>
-          <tr>
-            <td style="text-align:center; font-weight:bold; font-size:13pt;">${totalCount}</td>
-            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#15803d;">${varCount}</td>
-            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#b45309;">${izinCount}</td>
-            <td style="text-align:center; font-weight:bold; font-size:13pt; color:#b91c1c;">${yokStudents.length}</td>
-          </tr>
-        </table>
-
-        <div class="section-title">2. Yoklamada Bulunmayan (Devamsız) Öğrenciler</div>
-        <table class="absent-table">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="border:1px solid #cbd5e1; padding:6px; width:12%;">Sıra</th>
-              <th style="border:1px solid #cbd5e1; padding:6px; text-align:left;">Öğrenci Adı Soyadı</th>
-              <th style="border:1px solid #cbd5e1; padding:6px; width:28%;">Kat / Oda No</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${yokListHtml}
-          </tbody>
-        </table>
-
-        <div class="section-title">3. Nöbet Vukuat Raporu, Etüt ve Gece Yoklaması Notları</div>
-        <div class="notes-box">${log.notlar || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}</div>
-
-        <table class="signatures">
-          <tr>
-            <td>
-              <div>Erkek Pansiyonu Nöbetçi Belletmen</div>
-              <div class="sig-line">${log.erkekBelletmen1 || '...........................'}</div>
-              <div style="font-size:9pt; color:#64748b;">İmza</div>
-            </td>
-            <td>
-              <div>Erkek Pansiyonu Nöbetçi Belletmen</div>
-              <div class="sig-line">${log.erkekBelletmen2 || '...........................'}</div>
-              <div style="font-size:9pt; color:#64748b;">İmza</div>
-            </td>
-            <td>
-              <div>Kız Pansiyonu Nöbetçi Belletmen</div>
-              <div class="sig-line">${log.kizBelletmen1 || '...........................'}</div>
-              <div style="font-size:9pt; color:#64748b;">İmza</div>
-            </td>
-            <td>
-              <div>Kız Pansiyonu Nöbetçi Belletmen</div>
-              <div class="sig-line">${log.kizBelletmen2 || '...........................'}</div>
-              <div style="font-size:9pt; color:#64748b;">İmza</div>
-            </td>
-          </tr>
-        </table>
-
-        <div class="approval">
-          <div><strong>KONTROL EDEN / ONAYLAYAN</strong></div>
-          <div style="margin-top:38px; font-weight:bold;">......................................................</div>
-          <div style="font-size:10pt;">Pansiyon Müdür Yardımcısı</div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 350);
-          };
-        </script>
-      </body>
-      </html>
-    `;
-
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-  };
-
   if (!loggedBelletmen) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col justify-between">
@@ -492,6 +277,9 @@ export default function BelletmenPage() {
   const varCount = allStudents.filter((s: any) => s.status === 'var').length;
   const yokCount = allStudents.filter((s: any) => s.status === 'yok').length;
   const izinCount = allStudents.filter((s: any) => s.status === 'izinli').length;
+
+  // PDF için devamsızlar
+  const pdfYokStudents = allStudents.filter((s: any) => s.status === 'yok');
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
@@ -590,7 +378,6 @@ export default function BelletmenPage() {
           </div>
         )}
 
-        {/* NÖBET DEFTERİ EKLEME, DÜZENLEME VE RESMÎ PDF ÇIKTISI SEKMESİ */}
         {activeTab === 'defter' && (
           <div className="space-y-6">
             <div className={`p-6 rounded-2xl border border-t-4 shadow-sm space-y-4 ${editingLogId ? 'bg-amber-50 border-amber-300 border-t-amber-500' : 'bg-white border-slate-200 border-t-[#006bb6]'}`}>
@@ -629,13 +416,12 @@ export default function BelletmenPage() {
               </form>
             </div>
 
-            {/* KAYITLI NÖBET DEFTERİ LİSTESİ VE PDF ÇIKTI BUTONLARI */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-extrabold text-slate-900">
                   🗂️ Kaydedilen Nöbet Defteri Tutanakları ({store?.dutyLogs?.length || 0})
                 </h3>
-                <span className="text-xs text-slate-500">Herhangi bir kaydın sağındaki butondan A4 PDF çıktısı alabilirsiniz.</span>
+                <span className="text-xs text-slate-500">Butona tıklayarak açılan pencereden direkt PDF çıktısı alabilirsiniz.</span>
               </div>
 
               {(store?.dutyLogs || []).length === 0 ? (
@@ -658,7 +444,7 @@ export default function BelletmenPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handlePrintDutyLogPdf(log)}
+                            onClick={() => setPdfModalLog(log)}
                             className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-1.5 rounded-xl font-bold shadow-sm transition flex items-center gap-1.5"
                           >
                             🖨️ Resmî PDF Çıktısı Al
@@ -700,6 +486,161 @@ export default function BelletmenPage() {
           </div>
         )}
       </main>
+
+      {/* =================================================================== */}
+      // 📄 MEB ANTETLİ A4 PDF ÇIKTI MODALI (Tarayıcı Engelini Kesinlikle Aşar)
+      {/* =================================================================== */}
+      {pdfModalLog && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] flex flex-col overflow-hidden">
+            {/* Modal Üst Bilgi Barı */}
+            <div className="bg-[#006bb6] text-white p-4 flex justify-between items-center no-print">
+              <span className="font-extrabold text-sm">📄 Resmî Nöbet Defteri Tutanak Önizlemesi</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="bg-white text-[#006bb6] hover:bg-slate-100 px-4 py-2 rounded-xl text-xs font-black shadow transition flex items-center gap-1"
+                >
+                  🖨️ PDF İndir / Yazdır
+                </button>
+                <button
+                  onClick={() => setPdfModalLog(null)}
+                  className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition"
+                >
+                  ✕ Kapat
+                </button>
+              </div>
+            </div>
+
+            {/* A4 Kağıt Tasarım Alanı */}
+            <div className="p-6 sm:p-10 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
+              <div className="bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-[15mm] text-slate-900 box-border font-serif text-[11pt] leading-normal">
+                {/* Antet */}
+                <div className="text-center border-b-2 border-[#006bb6] pb-3 mb-5">
+                  <h1 className="m-0 text-[15pt] font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
+                  <h2 className="m-1 text-[12pt] font-bold text-[#006bb6]">İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
+                  <p className="m-1 text-[10pt] font-bold uppercase">Öğrenci Pansiyonu Günlük Nöbetçi Belletmen Tutanağı</p>
+                </div>
+
+                {/* Meta Bilgiler */}
+                <table className="w-full border-collapse mb-4 text-[10.5pt]">
+                  <tbody>
+                    <tr>
+                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Nöbet Tarihi</td>
+                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalLog.tarih}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Yoklama Seansı</td>
+                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalLog.seans}</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Erkek Pansiyonu Nöbetçileri</td>
+                      <td className="border border-slate-400 p-2">{[pdfModalLog.erkekBelletmen1, pdfModalLog.erkekBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Kız Pansiyonu Nöbetçileri</td>
+                      <td className="border border-slate-400 p-2">{[pdfModalLog.kizBelletmen1, pdfModalLog.kizBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Mevcut Özeti */}
+                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
+                  1. Pansiyon Yoklama ve Mevcut Özeti ({allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})
+                </div>
+                <table className="w-full border-collapse mb-4 text-[10.5pt] text-center">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border border-slate-400 p-2">Kayıtlı Toplam</th>
+                      <th className="border border-slate-400 p-2">Mevcut (Var)</th>
+                      <th className="border border-slate-400 p-2">Evci / İzinli</th>
+                      <th className="border border-slate-400 p-2">Yok (Devamsız)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border border-slate-400 p-2 font-bold text-base">{allStudents.length}</td>
+                      <td className="border border-slate-400 p-2 font-bold text-base text-emerald-700">{varCount}</td>
+                      <td className="border border-slate-400 p-2 font-bold text-base text-amber-700">{izinCount}</td>
+                      <td className="border border-slate-400 p-2 font-bold text-base text-rose-700">{pdfYokStudents.length}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Devamsızlar Listesi */}
+                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
+                  2. Yoklamada Bulunmayan (Devamsız) Öğrenciler
+                </div>
+                <table className="w-full border-collapse mb-4 text-[10.5pt]">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border border-slate-400 p-2 w-[12%] text-center">Sıra</th>
+                      <th className="border border-slate-400 p-2 text-left">Öğrenci Adı Soyadı</th>
+                      <th className="border border-slate-400 p-2 w-[28%] text-center">Kat / Oda No</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pdfYokStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="border border-slate-400 p-3 text-center text-emerald-700 font-bold">
+                          Yoklamada devamsız (yok) öğrenci bulunmamaktadır.
+                        </td>
+                      </tr>
+                    ) : (
+                      pdfYokStudents.map((s: any, idx: number) => (
+                        <tr key={s.id}>
+                          <td className="border border-slate-400 p-2 text-center">{idx + 1}</td>
+                          <td className="border border-slate-400 p-2 font-bold">{s.name}</td>
+                          <td className="border border-slate-400 p-2 text-center">{s.kat}. Kat / Oda {s.oda}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+
+                {/* Vukuat ve Notlar */}
+                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
+                  3. Nöbet Vukuat Raporu, Etüt ve Gece Yoklaması Notları
+                </div>
+                <div className="border border-slate-400 bg-slate-50/50 p-3 min-h-[120px] text-[10.5pt] whitespace-pre-wrap">
+                  {pdfModalLog.notlar || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}
+                </div>
+
+                {/* İmza Alanları */}
+                <table className="w-full mt-8 text-center text-[10pt] border-collapse">
+                  <tbody>
+                    <tr>
+                      <td className="w-1/4 p-2 align-top">
+                        <div>Erkek Pansiyonu Belletmen</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.erkekBelletmen1 || '.........................'}</div>
+                        <div className="text-[8.5pt] text-slate-500">İmza</div>
+                      </td>
+                      <td className="w-1/4 p-2 align-top">
+                        <div>Erkek Pansiyonu Belletmen</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.erkekBelletmen2 || '.........................'}</div>
+                        <div className="text-[8.5pt] text-slate-500">İmza</div>
+                      </td>
+                      <td className="w-1/4 p-2 align-top">
+                        <div>Kız Pansiyonu Belletmen</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.kizBelletmen1 || '.........................'}</div>
+                        <div className="text-[8.5pt] text-slate-500">İmza</div>
+                      </td>
+                      <td className="w-1/4 p-2 align-top">
+                        <div>Kız Pansiyonu Belletmen</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.kizBelletmen2 || '.........................'}</div>
+                        <div className="text-[8.5pt] text-slate-500">İmza</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Onay */}
+                <div className="text-center mt-8 text-[10.5pt]">
+                  <div className="font-bold">KONTROL EDEN / ONAYLAYAN</div>
+                  <div className="mt-10 font-bold">......................................................</div>
+                  <div className="text-[9.5pt]">Pansiyon Müdür Yardımcısı</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
