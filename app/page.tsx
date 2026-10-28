@@ -79,6 +79,7 @@ export default function UnifiedHomePortal() {
     setErrorMsg(''); setInfoMsg(''); setLoading(true);
     
     try {
+      // Önce velinin sistemde kayıtlı olup olmadığını kontrol et
       const verifyRes = await fetch('/api/pansiyon', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -98,40 +99,16 @@ export default function UnifiedHomePortal() {
       const childNames = (verifyData.students || []).map((s: any) => s.name).join(', ');
       const customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${childNames}),\nVeli Portalı Giriş Şifreniz: *${secretCode}*\n\n_Güvenliğiniz için bu kodu kimseyle paylaşmayınız._`;
       
-      let sentSuccess = false;
-      
-      // DEĞİŞİKLİK BURADA: tunnelUrl'yi doğru adresten (verifyData.store.tunnelUrl) çekiyoruz.
-      const activeTunnel = verifyData.store?.tunnelUrl; 
-      
-      if (activeTunnel) { 
-        try { 
-          const wpRes = await fetch(`${activeTunnel}/send-otp`, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ phone, code: secretCode, customMessage }) 
-          }); 
-          if (wpRes.ok) sentSuccess = true; 
-        } catch (err) {
-          console.error("Bulut Tünel Bağlantı Hatası", err);
-        } 
-      }
-      
-      // Cloudflare tüneli yoksa veya başarısız olursa yerel ağı (localhost) dene
-      if (!sentSuccess) { 
-        try { 
-          const localRes = await fetch('http://127.0.0.1:3001/send-otp', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ phone, code: secretCode, customMessage }) 
-          }); 
-          if (localRes.ok) sentSuccess = true; 
-        } catch (err) {
-          console.error("Yerel Tünel Bağlantı Hatası", err);
-        } 
-      }
-      
-      if (!sentSuccess) { 
-        setErrorMsg('WhatsApp bildirim sunucusuna şu an ulaşılamıyor. Lütfen okul idaresi ile iletişime geçiniz.'); 
+      // YENİ GÜVENLİ KÖPRÜ (CORS ve Tünel Engellerini Kesin Olarak Aşar)
+      const proxyRes = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_whatsapp_otp', phone, code: secretCode, customMessage })
+      });
+      const proxyData = await proxyRes.json();
+
+      if (!proxyRes.ok || !proxyData.success) { 
+        setErrorMsg(proxyData.message || 'WhatsApp bildirim sunucusuna şu an ulaşılamıyor. Lütfen okul idaresi ile iletişime geçiniz.'); 
         setLoading(false); 
         return; 
       }
