@@ -8,6 +8,10 @@ interface LeaveRecord { id: string; studentId: string; studentName: string; oda:
 interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string; }
 
 export default function UnifiedHomePortal() {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+
   const router = useRouter();
   const [roleTab, setRoleTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
   const [phone, setPhone] = useState('');
