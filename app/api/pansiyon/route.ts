@@ -176,7 +176,6 @@ export async function GET(request: Request) {
       'Access-Control-Allow-Origin': '*'
     };
 
-    // MOBİL HIZLANDIRMA: Ana sayfa açılışında sadece belletmen adlarını döndür (1 KB)
     if (mode === 'init') {
       const lightBelletmenler = (store.belletmenler || []).map((b) => ({
         id: b.id,
@@ -267,6 +266,32 @@ export async function POST(request: Request) {
       store.tunnelUrl = cleanText(body.tunnelUrl, 250);
       await saveStore(store);
       return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl });
+    }
+
+    // YENİ GÜVENLİ WHATSAPP KÖPRÜSÜ (CORS ve Tünel Engellerini Aşar)
+    if (action === 'send_whatsapp_otp') {
+      const { phone, code, customMessage } = body;
+      const tunnelUrl = store.tunnelUrl;
+      
+      if (!tunnelUrl) {
+        return NextResponse.json({ success: false, message: 'Aktif bir WhatsApp tüneli bulunamadı.' });
+      }
+
+      try {
+        const wpRes = await fetch(`${tunnelUrl}/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, code, customMessage })
+        });
+        
+        if (wpRes.ok) {
+          return NextResponse.json({ success: true });
+        } else {
+          return NextResponse.json({ success: false, message: 'Bot yanıt vermedi.' });
+        }
+      } catch (err: any) {
+        return NextResponse.json({ success: false, message: 'Tünel bağlantısı başarısız: ' + err.message });
+      }
     }
 
     if (action === 'verify_parent_phone') {
@@ -570,7 +595,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Kayıt bulunamadı.' }, { status: 404 });
     }
 
-    if (action === 'delete_duty_log') {
+    if (action === 'delete_duty_log`') {
       store.dutyLogs = store.dutyLogs.filter((l) => l.id !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Silindi.', store });
