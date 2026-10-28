@@ -5,9 +5,6 @@ import SblLogo from '../components/SblLogo';
 
 export default function AdminPage() {
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
-
   const [store, setStore] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [password, setPassword] = useState('');
@@ -20,6 +17,13 @@ export default function AdminPage() {
   const [dutyForm, setDutyForm] = useState({ tarih: '', erkek1: '', erkek2: '', kadin1: '', kadin2: '' });
   const [isEditingDuty, setIsEditingDuty] = useState(false);
   const [editingLog, setEditingLog] = useState<any>(null);
+
+  React.useEffect(() => { setMounted(true); }, []);
+
+  
+  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+
+ 
 
   const fetchStore = async () => { try { const res = await fetch('/api/pansiyon?t=' + Date.now(), { cache: 'no-store' }); if (res.ok) { const data = await res.json(); setStore(data.store); } } catch (e) {} };
   useEffect(() => { if (sessionStorage.getItem('pansiyon_admin_logged') === 'true') { setIsLoggedIn(true); } }, []);

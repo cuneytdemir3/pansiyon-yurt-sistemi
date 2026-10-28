@@ -5,9 +5,6 @@ import SblLogo from '../components/SblLogo';
 
 export default function BelletmenPage() {
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
-
   const [store, setStore] = useState<any>(null);
   const [loggedBelletmen, setLoggedBelletmen] = useState<any>(null);
   const [allowedGender, setAllowedGender] = useState<'erkek' | 'kiz'>('erkek');
@@ -23,6 +20,13 @@ export default function BelletmenPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'yoklama' | 'defter' | 'izinler'>('yoklama');
   const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => { setMounted(true); }, []);
+
+  // Gördüğünüz gibi return satırı ARTIK EN ALTTA, bütün hooklardan sonra!
+  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+
+  // ... (Dosyanın geri kalanı, sizin kendi tasarımlarınız aynen aşağıda kalsın) ...
 
   const [dutyLogForm, setDutyLogForm] = useState({
     tarih: new Date().toISOString().split('T')[0],
