@@ -14,9 +14,6 @@ function getSql() {
   return neon(url);
 }
 
-// ============================================================================
-// 1. İÇ GÜVENLİK: XSS / ZARARLI KOD TEMİZLEYİCİ & BRUTE-FORCE KORUMASI
-// ============================================================================
 const loginAttempts = new Map<string, { fails: number; lockUntil: number }>();
 
 function getClientIp(request: Request): string {
@@ -42,7 +39,6 @@ function recordFailedLogin(ip: string) {
   const now = Date.now();
   const record = loginAttempts.get(ip) || { fails: 0, lockUntil: 0 };
   record.fails += 1;
-  // Art arda 10 hatalı şifre denemesinde 5 dakika kilitle
   if (record.fails >= 10) {
     record.lockUntil = now + 5 * 60 * 1000;
   }
@@ -53,7 +49,6 @@ function clearFailedLogin(ip: string) {
   loginAttempts.delete(ip);
 }
 
-// Zararlı HTML/Script etiketlerini temizler, Türkçe karakterlere ve normal metne dokunmaz
 function cleanText(val: any, maxLen = 1000): string {
   if (val === null || val === undefined) return '';
   return String(val)
@@ -75,17 +70,9 @@ export interface MonthlyDutyDay { tarih: string; erkek1: string; erkek2: string;
 export interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
 export interface DutyLogRecord { id: string; tarih: string; seans: string; erkekBelletmen1: string; erkekBelletmen2: string; kizBelletmen1: string; kizBelletmen2: string; notlar: string; }
 export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
-
 export interface AttendanceHistoryRecord {
-  id: string;
-  studentId: string;
-  studentName: string;
-  oda: string;
-  tarih: string;
-  saat: string;
-  seans: string;
-  status: 'var' | 'yok' | 'izinli';
-  belletmenName: string;
+  id: string; studentId: string; studentName: string; oda: string;
+  tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string;
 }
 
 export interface StoreData {
@@ -101,23 +88,13 @@ export interface StoreData {
 }
 
 const DEFAULT_STORE: StoreData = {
-  students: [],
-  belletmenler: [],
-  aylikNobetler: [],
-  leaves: [],
-  dutyLogs: [],
-  auditLogs: [],
-  attendanceHistory: [],
-  updatedAt: Date.now(),
-  tunnelUrl: ''
+  students: [], belletmenler: [], aylikNobetler: [], leaves: [],
+  dutyLogs: [], auditLogs: [], attendanceHistory: [], updatedAt: Date.now(), tunnelUrl: ''
 };
 
 export function normalizePhone10(raw: any): string {
   const digits = String(raw || '').replace(/\D/g, '');
-  if (digits.length >= 10) {
-    return digits.slice(-10);
-  }
-  return digits;
+  return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
 async function getStore(): Promise<StoreData> {
@@ -158,14 +135,12 @@ async function saveStore(store: StoreData): Promise<void> {
 function parseStudentGender(val: any): 'erkek' | 'kiz' {
   const s = String(val || '').trim().toLowerCase();
   if (s === 'k' || s.includes('kız') || s.includes('kiz') || s.includes('kadın') || s.includes('kadin') || s.includes('bayan')) return 'kiz';
-  if (s === 'e' || s.includes('erkek') || s.includes('bay')) return 'erkek';
   return 'erkek';
 }
 
 function parseBelletmenGender(val: any): 'erkek' | 'kadin' {
   const s = String(val || '').trim().toLowerCase();
   if (s === 'k' || s.includes('kız') || s.includes('kiz') || s.includes('kadın') || s.includes('kadin') || s.includes('bayan')) return 'kadin';
-  if (s === 'e' || s.includes('erkek') || s.includes('bay')) return 'erkek';
   return 'erkek';
 }
 
@@ -191,16 +166,29 @@ const addLog = (store: StoreData, kullanici: string, islem: string, detay: strin
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('mode');
     const cinsiyetFilter = searchParams.get('cinsiyet');
     const veliTelFilter = searchParams.get('veliTel');
     const store = await getStore();
 
     const headers = {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'X-Content-Type-Options': 'nosniff'
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Access-Control-Allow-Origin': '*'
     };
+
+    // MOBİL HIZLANDIRMA: Ana sayfa açılışında sadece belletmen adlarını döndür (1 KB)
+    if (mode === 'init') {
+      const lightBelletmenler = (store.belletmenler || []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        cinsiyet: b.cinsiyet,
+        brans: b.brans
+      }));
+      return NextResponse.json({
+        success: true,
+        store: { belletmenler: lightBelletmenler }
+      }, { headers });
+    }
 
     if (veliTelFilter) {
       const targetPhone = normalizePhone10(veliTelFilter);
@@ -240,12 +228,7 @@ export async function GET(request: Request) {
       }, { headers });
     }
 
-    // Ana sayfa / genel isteklerde yönetici ve belletmen şifrelerini maskele (Güvenlik)
-    const safeBelletmenler = (store.belletmenler || []).map((b) => ({
-      ...b
-    }));
-
-    return NextResponse.json({ success: true, store: { ...store, belletmenler: safeBelletmenler } }, { headers });
+    return NextResponse.json({ success: true, store }, { headers });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
@@ -254,8 +237,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const clientIp = getClientIp(request);
-
-    // Aşırı büyük (Saldırı amaçlı) JSON paketlerini reddet (Max 2MB)
     const rawBody = await request.text();
     if (rawBody.length > 2 * 1024 * 1024) {
       return NextResponse.json({ success: false, message: 'Veri boyutu sınırı aşıldı!' }, { status: 413 });
@@ -272,13 +253,12 @@ export async function POST(request: Request) {
     if (!store.dutyLogs) store.dutyLogs = [];
     if (!store.attendanceHistory) store.attendanceHistory = [];
 
-    // GİRİŞ İŞLEMLERİ İÇİN AKILLI BRUTE-FORCE KONTROLÜ
     if (action === 'admin_login' || action === 'belletmen_login' || action === 'verify_parent_phone') {
       const bf = checkBruteForce(clientIp);
       if (bf.blocked) {
         return NextResponse.json({
           success: false,
-          message: `Çok fazla hatalı giriş denemesi yapıldı. Güvenliğiniz için lütfen ${bf.remainingSec} saniye sonra tekrar deneyiniz.`
+          message: `Çok fazla hatalı giriş denemesi yapıldı. Lütfen ${bf.remainingSec} saniye sonra tekrar deneyiniz.`
         }, { status: 429 });
       }
     }

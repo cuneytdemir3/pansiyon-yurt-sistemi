@@ -36,7 +36,7 @@ export default function UnifiedHomePortal() {
   const [leaveNote, setLeaveNote] = useState('');
 
   useEffect(() => {
-    fetch('/api/pansiyon?t=' + Date.now(), { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+    fetch('/api/pansiyon?mode=init&t=' + Date.now(), { cache: 'no-store' }).then((r) => r.json()).then((d) => {
       if (d.success && d.store?.belletmenler) {
         setBelletmenList(d.store.belletmenler);
         if (d.store.belletmenler.length > 0) setSelectedBelId(d.store.belletmenler[0].id);
