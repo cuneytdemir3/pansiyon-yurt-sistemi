@@ -3,114 +3,67 @@ const qrcode = require('qrcode-terminal');
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'OPTIONS'] }));
 app.use(express.json({ limit: '15mb' }));
 
-const DATA_FILE = path.join(__dirname, 'pansiyon_kalici_veri.json');
-
-function readPersistentStore() {
-    try { if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8')); } catch (e) {}
-    return null;
+async function syncTunnelToNeon() {
+    try {
+        if (!fs.existsSync('tunnel.log')) return;
+        const log = fs.readFileSync('tunnel.log', 'utf-8');
+        const match = log.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
+        if (match) {
+            const tunnelUrl = match[0];
+            await fetch('https://pansiyon-yurt-sistemi.vercel.app/api/pansiyon', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'update_tunnel_url', tunnelUrl })
+            });
+            console.log('☁️ [NEON DB] WhatsApp Tünel Adresi Buluta İşlendi:', tunnelUrl);
+        }
+    } catch (e) {}
 }
 
-function writePersistentStore(store) {
-    try { fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8'); return true; } catch (e) { return false; }
-}
-
-app.get('/store', (req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.json({ success: true, store: readPersistentStore() });
-});
-
-app.post('/store', (req, res) => {
-    if (req.body.store) {
-        writePersistentStore(req.body.store);
-        console.log(`🔄 [CANLI SENKRONİZASYON] Veritabanı güncellendi`);
-    }
-    res.json({ success: true });
-});
-
-// =======================================================================
-// KESİN ÇÖZÜM: BİLGİSAYARDAKİ YÜKLÜ CHROME VEYA EDGE'İ BUL
-// (Puppeteer'ın kendi eksik dosyalarını indirmeye çalışmasını engeller)
-// =======================================================================
 const chromePaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 ];
-
 let targetExecutable = null;
-for (const p of chromePaths) {
-    if (fs.existsSync(p)) {
-        targetExecutable = p;
-        break;
-    }
-}
-
-if (!targetExecutable) {
-    console.error("❌ HATA: Bilgisayarınızda Google Chrome veya Edge bulunamadı!");
-} else {
-    console.log("✅ Sistem Tarayıcısı Bulundu:", targetExecutable);
-}
+for (const p of chromePaths) { if (fs.existsSync(p)) { targetExecutable = p; break; } }
 
 let isReady = false;
-
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
-    puppeteer: {
-        headless: false,
-        executablePath: targetExecutable, // Doğrudan bilgisayardaki Chrome'u açar
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    }
+    puppeteer: { headless: false, executablePath: targetExecutable, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
 });
 
 client.on('qr', (qr) => {
-    console.log('\n================================================');
-    console.log('📱 LÜTFEN AÇILAN PENCEREDEKİ VEYA AŞAĞIDAKİ QR KODU OKUTUN:');
-    console.log('================================================\n');
+    console.log('\n📱 LÜTFEN WHATSAPP QR KODUNU OKUTUN:\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
     isReady = true;
-    console.log('\n✅ [BAŞARILI] WhatsApp Botu ve Mobil Senkronizasyon Sunucusu Hazır!\n');
+    console.log('\n✅ [BAŞARILI] WhatsApp Bildirim Sunucusu Hazır!');
+    syncTunnelToNeon();
+    setInterval(syncTunnelToNeon, 60000);
 });
-
-client.on('authenticated', () => {
-    console.log('🔐 WhatsApp oturumu doğrulandı.');
-});
-
-client.on('disconnected', (reason) => {
-    isReady = false;
-    console.log('⚠️ WhatsApp bağlantısı koptu:', reason);
-});
-
-function formatTurkishPhone(rawPhone) {
-    let cleaned = String(rawPhone || '').replace(/\D/g, '');
-    if (cleaned.startsWith('0090')) cleaned = cleaned.substring(2);
-    else if (cleaned.length === 11 && cleaned.startsWith('0')) cleaned = '90' + cleaned.substring(1);
-    else if (cleaned.length === 10 && !cleaned.startsWith('90')) cleaned = '90' + cleaned;
-    return cleaned;
-}
-
-app.get('/status', (req, res) => { res.json({ ready: isReady }); });
 
 app.post('/send-otp', async (req, res) => {
     const { phone, code, customMessage } = req.body;
-    if (!isReady) return res.status(503).json({ success: false, message: 'WhatsApp Botu hazır değil.' });
-
+    if (!isReady) return res.status(503).json({ success: false, message: 'WhatsApp hazır değil.' });
     try {
-        const formatted = formatTurkishPhone(phone);
-        const numberDetails = await client.getNumberId(formatted);
-        const targetChatId = numberDetails ? numberDetails._serialized : `${formatted}@c.us`;
-        const text = customMessage ? customMessage : `*Prof. Dr. Mümtaz Turhan SBL*\n\nGiriş Kodunuz: *${code}*`;
+        let cleaned = String(phone || '').replace(/\D/g, '');
+        if (cleaned.length === 10) cleaned = '90' + cleaned;
+        if (cleaned.length === 11 && cleaned.startsWith('0')) cleaned = '90' + cleaned.substring(1);
+        const numberDetails = await client.getNumberId(cleaned);
+        const targetChatId = numberDetails ? numberDetails._serialized : `${cleaned}@c.us`;
+        const text = customMessage ? customMessage : `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nGiriş Kodunuz: *${code}*`;
         await client.sendMessage(targetChatId, text);
-        console.log(`📩 [WHATSAPP GÖNDERİLDİ] -> ${formatted}`);
+        console.log(`📩 [WHATSAPP GÖNDERİLDİ] -> ${cleaned}`);
         return res.json({ success: true, message: 'Mesaj iletildi.' });
     } catch (err) {
         return res.status(500).json({ success: false, message: err.message });
@@ -118,6 +71,7 @@ app.post('/send-otp', async (req, res) => {
 });
 
 app.listen(3001, '0.0.0.0', () => {
-    console.log(`🌐 WhatsApp & Mobil Veri Köprüsü (Port 3001) çalışıyor.`);
+    console.log('🌐 WhatsApp Sunucusu (Port 3001) çalışıyor.');
+    syncTunnelToNeon();
     client.initialize();
 });
