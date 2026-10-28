@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SblLogo from './components/SblLogo';
+
 // Vercel Test Güncellemesi
 interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string; anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: 'var' | 'yok' | 'izinli'; }
 interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
@@ -74,21 +75,72 @@ export default function UnifiedHomePortal() {
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault(); setErrorMsg(''); setInfoMsg(''); setLoading(true);
+    e.preventDefault(); 
+    setErrorMsg(''); setInfoMsg(''); setLoading(true);
+    
     try {
-      const verifyRes = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify_parent_phone', phone }) });
+      const verifyRes = await fetch('/api/pansiyon', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ action: 'verify_parent_phone', phone }) 
+      });
       const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData.success) { setErrorMsg(verifyData.message || 'Adınıza kayıtlı öğrenci gözükmemektedir'); setLoading(false); return; }
+      
+      if (!verifyRes.ok || !verifyData.success) { 
+        setErrorMsg(verifyData.message || 'Adınıza kayıtlı öğrenci gözükmemektedir'); 
+        setLoading(false); 
+        return; 
+      }
+      
       const secretCode = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedOtp(secretCode);
+      
       const childNames = (verifyData.students || []).map((s: any) => s.name).join(', ');
       const customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${childNames}),\nVeli Portalı Giriş Şifreniz: *${secretCode}*\n\n_Güvenliğiniz için bu kodu kimseyle paylaşmayınız._`;
+      
       let sentSuccess = false;
-      if (verifyData.tunnelUrl) { try { const wpRes = await fetch(`${verifyData.tunnelUrl}/send-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code: secretCode, customMessage }) }); if (wpRes.ok) sentSuccess = true; } catch {} }
-      if (!sentSuccess) { try { const localRes = await fetch('http://127.0.0.1:3001/send-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code: secretCode, customMessage }) }); if (localRes.ok) sentSuccess = true; } catch {} }
-      if (!sentSuccess) { setErrorMsg('WhatsApp bildirim sunucusuna şu an ulaşılamıyor. Lütfen okul idaresi ile iletişime geçiniz.'); setLoading(false); return; }
-      setStep('otp'); setInfoMsg('6 haneli giriş şifreniz cep telefonunuzdaki WhatsApp uygulamasına gönderilmiştir.');
-    } catch { setErrorMsg('Sunucu bağlantı hatası oluştu.'); }
+      
+      // DEĞİŞİKLİK BURADA: tunnelUrl'yi doğru adresten (verifyData.store.tunnelUrl) çekiyoruz.
+      const activeTunnel = verifyData.store?.tunnelUrl; 
+      
+      if (activeTunnel) { 
+        try { 
+          const wpRes = await fetch(`${activeTunnel}/send-otp`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ phone, code: secretCode, customMessage }) 
+          }); 
+          if (wpRes.ok) sentSuccess = true; 
+        } catch (err) {
+          console.error("Bulut Tünel Bağlantı Hatası", err);
+        } 
+      }
+      
+      // Cloudflare tüneli yoksa veya başarısız olursa yerel ağı (localhost) dene
+      if (!sentSuccess) { 
+        try { 
+          const localRes = await fetch('http://127.0.0.1:3001/send-otp', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ phone, code: secretCode, customMessage }) 
+          }); 
+          if (localRes.ok) sentSuccess = true; 
+        } catch (err) {
+          console.error("Yerel Tünel Bağlantı Hatası", err);
+        } 
+      }
+      
+      if (!sentSuccess) { 
+        setErrorMsg('WhatsApp bildirim sunucusuna şu an ulaşılamıyor. Lütfen okul idaresi ile iletişime geçiniz.'); 
+        setLoading(false); 
+        return; 
+      }
+      
+      setStep('otp'); 
+      setInfoMsg('6 haneli giriş şifreniz cep telefonunuzdaki WhatsApp uygulamasına gönderilmiştir.');
+    } catch { 
+      setErrorMsg('Sunucu bağlantı hatası oluştu.'); 
+    }
     setLoading(false);
   };
 

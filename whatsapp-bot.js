@@ -54,18 +54,28 @@ client.on('ready', () => {
 
 app.post('/send-otp', async (req, res) => {
     const { phone, code, customMessage } = req.body;
+    
     if (!isReady) return res.status(503).json({ success: false, message: 'WhatsApp hazır değil.' });
+    
+    // VERCEL'DEN GELEN İSTEĞİ TERMİNALDE GÖSTEREN YENİ SİSTEM
+    console.log(`\n🔔 [YENİ İSTEK] Vercel'den mesaj talebi geldi!`);
+    console.log(`👉 Veritabanından Çekilen Hedef Numara: ${phone}`);
+
     try {
         let cleaned = String(phone || '').replace(/\D/g, '');
         if (cleaned.length === 10) cleaned = '90' + cleaned;
         if (cleaned.length === 11 && cleaned.startsWith('0')) cleaned = '90' + cleaned.substring(1);
+        
         const numberDetails = await client.getNumberId(cleaned);
         const targetChatId = numberDetails ? numberDetails._serialized : `${cleaned}@c.us`;
+        
         const text = customMessage ? customMessage : `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nGiriş Kodunuz: *${code}*`;
+        
         await client.sendMessage(targetChatId, text);
-        console.log(`📩 [WHATSAPP GÖNDERİLDİ] -> ${cleaned}`);
+        console.log(`✅ [BAŞARILI] Mesaj Gönderildi -> ${cleaned}`);
         return res.json({ success: true, message: 'Mesaj iletildi.' });
     } catch (err) {
+        console.error(`❌ [HATA] Mesaj Gönderilemedi:`, err.message);
         return res.status(500).json({ success: false, message: err.message });
     }
 });
