@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SblLogo from './components/SblLogo';
-
+// Vercel Test Güncellemesi
 interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string; anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: 'var' | 'yok' | 'izinli'; }
 interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
 interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string; }
