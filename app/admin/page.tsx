@@ -4,6 +4,7 @@ import Link from 'next/link';
 import SblLogo from '../components/SblLogo';
 
 export default function AdminPage() {
+  // 1. BÜTÜN STATE'LER (HOOK'LAR) EN ÜSTTE
   const [mounted, setMounted] = React.useState(false);
   const [store, setStore] = useState<any>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -18,17 +19,30 @@ export default function AdminPage() {
   const [isEditingDuty, setIsEditingDuty] = useState(false);
   const [editingLog, setEditingLog] = useState<any>(null);
 
+  // 2. BÜTÜN USE-EFFECT'LER (HOOK'LAR) HİÇBİR KESİNTİ OLMADAN BURADA
   React.useEffect(() => { setMounted(true); }, []);
 
-  
-  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+  const fetchStore = async () => { 
+    try { 
+      const res = await fetch('/api/pansiyon?t=' + Date.now(), { cache: 'no-store' }); 
+      if (res.ok) { 
+        const data = await res.json(); 
+        setStore(data.store); 
+      } 
+    } catch (e) {} 
+  };
 
- 
+  useEffect(() => { 
+    if (sessionStorage.getItem('pansiyon_admin_logged') === 'true') { 
+      setIsLoggedIn(true); 
+    } 
+  }, []);
 
-  const fetchStore = async () => { try { const res = await fetch('/api/pansiyon?t=' + Date.now(), { cache: 'no-store' }); if (res.ok) { const data = await res.json(); setStore(data.store); } } catch (e) {} };
-  useEffect(() => { if (sessionStorage.getItem('pansiyon_admin_logged') === 'true') { setIsLoggedIn(true); } }, []);
-  useEffect(() => { if (isLoggedIn) fetchStore(); }, [isLoggedIn]);
+  useEffect(() => { 
+    if (isLoggedIn) fetchStore(); 
+  }, [isLoggedIn]);
 
+  // 3. FONKSİYONLAR
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true);
     try {
@@ -41,25 +55,34 @@ export default function AdminPage() {
   };
 
   const handleAddStudent = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_student', ...stForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setStForm({ name: '', cinsiyet: 'erkek', kat: '1', oda: '101', anneAdi: '', anneTel: '', babaAdi: '', babaTel: '' }); } setLoading(false); };
+  
   const handleBulkPasteImport = async () => {
     if (!bulkText.trim()) return;
     const lines = bulkText.trim().split('\n');
     const rows = lines.map((line) => { const parts = line.split(/\t|;|,/); return { name: (parts[0] || '').trim(), cinsiyet: (parts[1] || 'Erkek').trim(), kat: (parts[2] || '1').trim(), oda: (parts[3] || '101').trim(), anneAdi: (parts[4] || '').trim(), anneTel: (parts[5] || '').trim(), babaAdi: (parts[6] || '').trim(), babaTel: (parts[7] || '').trim() }; }).filter((r) => r.name.length > 1);
     setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_import', rows }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBulkText(''); alert(data.message); } setLoading(false);
   };
+  
   const handleClearAllStudents = async () => { if (!confirm('Tüm öğrenci listesini sıfırlamak istediğinize emin misiniz?')) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_students' }) }); const data = await res.json(); if (data.success) setStore(data.store); };
+  
   const handleDeleteStudent = async (id: string) => { const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_student', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleAddBelletmen = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_belletmen', ...belForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBelForm({ name: '', cinsiyet: 'erkek', brans: '', phone: '', password: '1234' }); } setLoading(false); };
+  
   const handleDeleteBelletmen = async (id: string) => { const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_belletmen', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleDutySubmit = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_or_update_monthly_duty', ...dutyForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setDutyForm({ tarih: '', erkek1: '', erkek2: '', kadin1: '', kadin2: '' }); setIsEditingDuty(false); } setLoading(false); };
+  
   const handleDeleteDuty = async (tarih: string) => { if(!confirm(`${tarih} tarihli nöbeti silmek istediğinize emin misiniz?`)) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_monthly_duty', tarih }) }); const data = await res.json(); if (data.success) setStore(data.store); };
 
   const handleUpdateDutyLog = async (e: React.FormEvent) => { e.preventDefault(); if (!editingLog) return; setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'update_duty_log', ...editingLog }) }); const data = await res.json(); if (data.success) { setStore(data.store); setEditingLog(null); alert('Nöbet defteri güncellendi!'); } setLoading(false); };
+  
   const handleDeleteDutyLog = async (id: string) => { if(!confirm('Bu nöbet tutanağını silmek istediğinize emin misiniz?')) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_duty_log', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleClearLogs = async () => { if (!confirm('Tüm sistem loglarını temizlemek istediğinize emin misiniz?')) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_audit_logs' }) }); const data = await res.json(); if (data.success) setStore(data.store); };
+
+  // 4. ERKEN ÇIKIŞLAR (BÜTÜN HOOKLAR BİTTİKTEN SONRA!)
+  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
 
   if (!isLoggedIn) {
     return (
@@ -75,6 +98,7 @@ export default function AdminPage() {
     );
   }
 
+  // 5. ANA SAYFA RENDER (ÇİZİM) İŞLEMİ
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <header className="bg-white border-b sticky top-0 z-20 px-4 md:px-8 py-3 shadow-sm">
