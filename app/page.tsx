@@ -8,12 +8,10 @@ interface LeaveRecord { id: string; studentId: string; studentName: string; oda:
 interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string; }
 
 export default function UnifiedHomePortal() {
+  // 1. BÜTÜN HOOKLAR (STATE VE ROUTER) EN ÜSTTE
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
-  
-
   const router = useRouter();
-  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+  
   const [roleTab, setRoleTab] = useState<'veli' | 'belletmen' | 'yonetici'>('veli');
   const [phone, setPhone] = useState('');
   const [otpInput, setOtpInput] = useState('');
@@ -40,6 +38,9 @@ export default function UnifiedHomePortal() {
   const [endDate, setEndDate] = useState('');
   const [leaveNote, setLeaveNote] = useState('');
 
+  // 2. BÜTÜN USE-EFFECT'LER KESİNTİSİZ OLARAK BURADA
+  React.useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
     fetch('/api/pansiyon?mode=init&t=' + Date.now(), { cache: 'no-store' }).then((r) => r.json()).then((d) => {
       if (d.success && d.store?.belletmenler) {
@@ -51,6 +52,7 @@ export default function UnifiedHomePortal() {
     if (savedPhone) { setPhone(savedPhone); setStep('portal'); loadParentData(savedPhone); }
   }, []);
 
+  // 3. FONKSİYONLAR
   const loadParentData = async (parentPhone: string) => {
     try {
       const res = await fetch(`/api/pansiyon?veliTel=${encodeURIComponent(parentPhone)}&t=${Date.now()}`, { cache: 'no-store' });
@@ -138,6 +140,7 @@ export default function UnifiedHomePortal() {
 
   const handleLogout = () => { sessionStorage.removeItem('pansiyon_veli_tel'); setStep('phone'); setMyStudents([]); setMyLeaves([]); setMyHistory([]); setOtpInput(''); setGeneratedOtp(''); setInfoMsg(''); setErrorMsg(''); };
 
+  // 4. DEĞİŞKEN HESAPLAMALARI
   const activeStudent = myStudents.find((s) => s.id === selectedStudentId) || myStudents[0];
   const activeStudentLeaves = myLeaves.filter((l) => activeStudent && l.studentId === activeStudent.id);
   const activeStudentHistory = myHistory.filter((h) => activeStudent && h.studentId === activeStudent.id);
@@ -151,6 +154,10 @@ export default function UnifiedHomePortal() {
   const presentCount = activeStudentHistory.filter((h) => h.status === 'var').length;
   const absentCount = activeStudentHistory.filter((h) => h.status === 'yok').length;
 
+  // 5. ERKEN ÇIKIŞ BURADA OLMALI! Bütün Hook'lar bittikten sonra.
+  if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
+
+  // 6. ANA SAYFA ÇİZİMİ
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col justify-between">
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30 px-4 md:px-8 py-3">
