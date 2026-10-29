@@ -33,7 +33,7 @@ export default function BelletmenPage() {
   });
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
-  // PDF Önizleme Modalı İçin Durum (Artık Tarih Bazlı Birleştirme)
+  // PDF Önizleme Modalı İçin Durum (Tarih Bazlı Birleştirme)
   const [pdfModalDate, setPdfModalDate] = useState<string | null>(null);
 
   // 2. BÜTÜN USE-EFFECT'LER KESİNTİSİZ BURADA
@@ -179,7 +179,7 @@ export default function BelletmenPage() {
       return;
     }
     
-    // GÜVENLİ VE TEK SATIRLIK WHATSAPP MESAJI
+    // GÜVENLİ VE TEK SATIRLIK WHATSAPP MESAJI (Syntax hatası temizlendi)
     const text = `*Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu*\n\nSayın ${parentName || 'Velimiz'},\nÖğrencimiz *${student.name}* (Oda ${student.oda}), ${activeDate} tarihli *${activeSeans}* yoklamasında *YOK* olarak işaretlenmiştir.\n\nBilgilerinize sunar, acil durumda nöbetçi belletmen öğretmenimizle iletişime geçmenizi rica ederiz.`;
 
     let sent = false;
@@ -245,7 +245,7 @@ export default function BelletmenPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 4. ERKEN ÇIKIŞLAR BURADA YER ALMALI (Bütün hook'lar tamamlandıktan sonra)
+  // 4. ERKEN ÇIKIŞLAR BURADA YER ALMALI
   if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
 
   if (!loggedBelletmen) {
@@ -356,11 +356,14 @@ export default function BelletmenPage() {
       historyYok.forEach((h: any) => {
         const st = allStudents.find((s: any) => s.id === h.studentId);
         if (st) {
-          if (!uniqueYok.has(h.studentId)) uniqueYok.set(h.studentId, { ...st, missingSeans: [h.seans] });
-          else uniqueYok.get(h.studentId).missingSeans.push(h.seans);
+          if (!uniqueYok.has(h.studentId)) {
+            uniqueYok.set(h.studentId, { ...st, missingSeans: [h.seans] });
+          } else if (!uniqueYok.get(h.studentId).missingSeans.includes(h.seans)) {
+            uniqueYok.get(h.studentId).missingSeans.push(h.seans);
+          }
         }
       });
-      finalPdfYokList = Array.from(uniqueYok.values());
+      finalPdfYokList = Array.from(uniqueYok.values()).sort((a: any, b: any) => Number(a.oda) - Number(b.oda));
     } else if (pdfModalDate === activeDate) {
       finalPdfYokList = pdfYokStudents;
     }
@@ -368,214 +371,279 @@ export default function BelletmenPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
-      <header className="bg-white border-b sticky top-0 z-20 px-4 md:px-8 py-3 shadow-sm">
-        <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-3">
-          <div className="flex items-center gap-3">
-            <SblLogo size="sm" showText={false} />
-            <div>
-              <span className="text-xs font-extrabold uppercase text-[#006bb6]">
-                {allowedGender === 'kiz' ? '👩 KIZ PANSİYONU' : '👨 ERKEK PANSİYONU'} NÖBET EKRANI
-              </span>
-              <h1 className="text-base font-black text-slate-900">{loggedBelletmen.name}</h1>
+      {/* YAZDIRMA (PRINT) İÇİN ÖZEL A4 CSS MOTORU */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0mm;
+          }
+          body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .no-print-area {
+            display: none !important;
+          }
+          .print-modal-wrapper {
+            position: static !important;
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          .print-modal-box {
+            max-width: 100% !important;
+            max-height: none !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          .print-scroll-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          .print-a4-sheet {
+            width: 100% !important;
+            min-height: auto !important;
+            box-shadow: none !important;
+            border: none !important;
+            padding: 12mm 15mm !important;
+            margin: 0 auto !important;
+            box-sizing: border-box !important;
+          }
+          .avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+        }
+      `}} />
+
+      {/* ANA SAYFA İÇERİĞİ (YAZDIRIRKEN TAMAMEN GİZLENİR) */}
+      <div className="no-print-area">
+        <header className="bg-white border-b sticky top-0 z-20 px-4 md:px-8 py-3 shadow-sm">
+          <div className="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-3">
+            <div className="flex items-center gap-3">
+              <SblLogo size="sm" showText={false} />
+              <div>
+                <span className="text-xs font-extrabold uppercase text-[#006bb6]">
+                  {allowedGender === 'kiz' ? '👩 KIZ PANSİYONU' : '👨 ERKEK PANSİYONU'} NÖBET EKRANI
+                </span>
+                <h1 className="text-base font-black text-slate-900">{loggedBelletmen.name}</h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {saving && <span className="text-xs font-bold text-amber-600 animate-pulse">💾 Kaydediliyor...</span>}
+              <button onClick={() => loadData(allowedGender)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold border">🔄 Listeyi Yenile</button>
+              <button onClick={() => { sessionStorage.removeItem('pansiyon_belletmen_session'); setLoggedBelletmen(null); }} className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold">Çıkış</button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {saving && <span className="text-xs font-bold text-amber-600 animate-pulse">💾 Kaydediliyor...</span>}
-            <button onClick={() => loadData(allowedGender)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold border">🔄 Listeyi Yenile</button>
-            <button onClick={() => { sessionStorage.removeItem('pansiyon_belletmen_session'); setLoggedBelletmen(null); }} className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold">Çıkış</button>
+        </header>
+
+        <main className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs text-slate-500 font-bold">Listelenen Öğrenci</span><p className="text-2xl font-black text-slate-900">{filteredStudents.length}</p></div>
+            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl"><span className="text-xs text-emerald-700 font-bold">🟢 Yurtta (Var)</span><p className="text-2xl font-black text-emerald-900">{varCount}</p></div>
+            <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl"><span className="text-xs text-rose-700 font-bold">🔴 Yoklamada Yok</span><p className="text-2xl font-black text-rose-900">{yokCount}</p></div>
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl"><span className="text-xs text-amber-700 font-bold">🟡 Evci / İzinli</span><p className="text-2xl font-black text-amber-900">{izinCount}</p></div>
           </div>
-        </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs text-slate-500 font-bold">Listelenen Öğrenci</span><p className="text-2xl font-black text-slate-900">{filteredStudents.length}</p></div>
-          <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl"><span className="text-xs text-emerald-700 font-bold">🟢 Yurtta (Var)</span><p className="text-2xl font-black text-emerald-900">{varCount}</p></div>
-          <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl"><span className="text-xs text-rose-700 font-bold">🔴 Yoklamada Yok</span><p className="text-2xl font-black text-rose-900">{yokCount}</p></div>
-          <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl"><span className="text-xs text-amber-700 font-bold">🟡 Evci / İzinli</span><p className="text-2xl font-black text-amber-900">{izinCount}</p></div>
-        </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <button onClick={() => setActiveTab('yoklama')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'yoklama' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📋 Etüt & Yat Yoklaması ({allStudents.length})</button>
+            <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Nöbet Defteri & PDF Çıktı ({sortedDates.length} Gün)</button>
+            <button onClick={() => setActiveTab('izinler')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'izinler' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>🟡 İzinli Öğrenci Listesi ({store?.leaves?.length || 0})</button>
+          </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <button onClick={() => setActiveTab('yoklama')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'yoklama' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📋 Etüt & Yat Yoklaması ({allStudents.length})</button>
-          <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Nöbet Defteri & PDF Çıktı ({sortedDates.length} Gün)</button>
-          <button onClick={() => setActiveTab('izinler')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'izinler' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>🟡 İzinli Öğrenci Listesi ({store?.leaves?.length || 0})</button>
-        </div>
-
-        {activeTab === 'yoklama' && (
-          <div className="space-y-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm flex flex-wrap justify-between items-center gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-extrabold text-slate-700">📅 Yoklama Seansı:</span>
-                <input type="date" value={activeDate} onChange={(e) => setActiveDate(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50" />
-                <select value={activeSeans} onChange={(e) => setActiveSeans(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50 text-[#006bb6]">
-                  <option value="1. Etüt Yoklaması (19:30)">📚 1. Etüt Yoklaması (19:30)</option>
-                  <option value="2. Etüt Yoklaması (20:30)">📚 2. Etüt Yoklaması (20:30)</option>
-                  <option value="Gece Yat Yoklaması (22:00)">🌙 Gece Yat Yoklaması (22:00)</option>
-                </select>
+          {activeTab === 'yoklama' && (
+            <div className="space-y-4">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm flex flex-wrap justify-between items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-extrabold text-slate-700">📅 Yoklama Seansı:</span>
+                  <input type="date" value={activeDate} onChange={(e) => setActiveDate(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50" />
+                  <select value={activeSeans} onChange={(e) => setActiveSeans(e.target.value)} className="p-2 border border-slate-300 rounded-xl font-bold bg-slate-50 text-[#006bb6]">
+                    <option value="1. Etüt Yoklaması (19:30)">📚 1. Etüt Yoklaması (19:30)</option>
+                    <option value="2. Etüt Yoklaması (20:30)">📚 2. Etüt Yoklaması (20:30)</option>
+                    <option value="Gece Yat Yoklaması (22:00)">🌙 Gece Yat Yoklaması (22:00)</option>
+                  </select>
+                </div>
+                <button type="button" onClick={handleArchiveFullSession} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition">
+                  📥 Bu Seansın Yoklamasını Veli Geçmişine Kaydet
+                </button>
               </div>
-              <button type="button" onClick={handleArchiveFullSession} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition">
-                📥 Bu Seansın Yoklamasını Veli Geçmişine Kaydet
-              </button>
-            </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-between items-center gap-3">
-              <div className="flex flex-wrap gap-1.5">
-                {(['all', 1, 2, 3, 4] as const).map((k) => (
-                  <button key={String(k)} onClick={() => setSelectedKat(k)} className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${selectedKat === k ? 'bg-[#006bb6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    {k === 'all' ? 'Tüm Katlar' : `${k}. Kat Odaları`}
-                  </button>
-                ))}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-between items-center gap-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {(['all', 1, 2, 3, 4] as const).map((k) => (
+                    <button key={String(k)} onClick={() => setSelectedKat(k)} className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${selectedKat === k ? 'bg-[#006bb6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      {k === 'all' ? 'Tüm Katlar' : `${k}. Kat Odaları`}
+                    </button>
+                  ))}
+                </div>
+                <input type="text" placeholder="🔍 Öğrenci adı veya oda ara..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="p-2.5 border rounded-xl text-xs w-full sm:w-64 bg-slate-50" />
               </div>
-              <input type="text" placeholder="🔍 Öğrenci adı veya oda ara..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="p-2.5 border rounded-xl text-xs w-full sm:w-64 bg-slate-50" />
-            </div>
 
-            {filteredStudents.length === 0 ? (
-              <div className="bg-white p-10 rounded-2xl border text-center text-slate-400 text-sm">Bu filtrede kayıtlı öğrenci bulunmamaktadır.</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filteredStudents.map((st: any) => (
-                  <div key={st.id} className={`bg-white rounded-2xl border p-4 shadow-sm transition ${st.status === 'yok' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'}`}>
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">{st.kat}. Kat • Oda {st.oda}</span>
-                        <h3 className="text-base font-extrabold text-slate-900 mt-1">{st.name}</h3>
-                      </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => handleStatusChange(st.id, 'var')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'var' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'}`}>Var</button>
-                        <button onClick={() => handleStatusChange(st.id, 'yok')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'yok' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-rose-50'}`}>Yok</button>
-                        <button onClick={() => handleStatusChange(st.id, 'izinli')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'izinli' ? 'bg-amber-500 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-amber-50'}`}>İzinli</button>
-                      </div>
-                    </div>
-
-                    {st.status === 'yok' && (
-                      <div className="mt-3 pt-3 border-t border-rose-100 bg-rose-50/60 p-2.5 rounded-xl flex flex-wrap justify-between items-center gap-2">
-                        <span className="text-[11px] font-bold text-rose-800">🚨 Veliye WhatsApp Devamsızlık Mesajı:</span>
-                        <div className="flex gap-1.5">
-                          <button onClick={() => sendAbsenceWhatsApp(st, 'anne')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📲 Anneye Gönder ({st.anneTel || 'Yok'})</button>
-                          <button onClick={() => sendAbsenceWhatsApp(st, 'baba')} className="bg-[#006bb6] hover:bg-[#005694] text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📲 Babaya Gönder ({st.babaTel || 'Yok'})</button>
+              {filteredStudents.length === 0 ? (
+                <div className="bg-white p-10 rounded-2xl border text-center text-slate-400 text-sm">Bu filtrede kayıtlı öğrenci bulunmamaktadır.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {filteredStudents.map((st: any) => (
+                    <div key={st.id} className={`bg-white rounded-2xl border p-4 shadow-sm transition ${st.status === 'yok' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'}`}>
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">{st.kat}. Kat • Oda {st.oda}</span>
+                          <h3 className="text-base font-extrabold text-slate-900 mt-1">{st.name}</h3>
+                        </div>
+                        <div className="flex gap-1">
+                          <button onClick={() => handleStatusChange(st.id, 'var')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'var' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'}`}>Var</button>
+                          <button onClick={() => handleStatusChange(st.id, 'yok')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'yok' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-rose-50'}`}>Yok</button>
+                          <button onClick={() => handleStatusChange(st.id, 'izinli')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'izinli' ? 'bg-amber-500 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-amber-50'}`}>İzinli</button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
-        {activeTab === 'defter' && (
-          <div className="space-y-6">
-            <div className={`p-6 rounded-2xl border border-t-4 shadow-sm space-y-4 ${editingLogId ? 'bg-amber-50 border-amber-300 border-t-amber-500' : 'bg-white border-slate-200 border-t-[#006bb6]'}`}>
-              <h2 className="text-base font-extrabold text-slate-900">
-                {editingLogId ? '✏️ Nöbet Defteri Kaydını ve Belletmen İsimlerini Düzenle' : '📖 Resmî Pansiyon Nöbet Defteri Tutanağı Yaz'}
-              </h2>
-              <form onSubmit={handleSaveOrUpdateDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
-                <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3 bg-white">
-                  <option value="1. Etüt Yoklaması (19:30)">Etüt Yoklaması (19:30)</option>
-                  <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
-                  <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
-                </select>
-                <input placeholder="Erkek Belletmen 1 Adı" value={dutyLogForm.erkekBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
-                <input placeholder="Erkek Belletmen 2 Adı" value={dutyLogForm.erkekBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
-                <input placeholder="Kız Belletmen 1 Adı" value={dutyLogForm.kizBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
-                <input placeholder="Kız Belletmen 2 Adı" value={dutyLogForm.kizBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
-                <textarea rows={3} placeholder="Nöbet vukuat ve yoklama notları..." value={dutyLogForm.notlar} onChange={(e) => setDutyLogForm({ ...dutyLogForm, notlar: e.target.value })} className="md:col-span-4 p-2.5 border rounded-xl bg-white" />
-                <div className="md:col-span-4 flex justify-end gap-2">
-                  {editingLogId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLogId(null);
-                        setDutyLogForm({ tarih: new Date().toISOString().split('T')[0], seans: 'Gece Yat Yoklaması (22:00)', erkekBelletmen1: '', erkekBelletmen2: '', kizBelletmen1: '', kizBelletmen2: '', notlar: '' });
-                      }}
-                      className="bg-slate-400 text-white px-5 py-2.5 rounded-xl font-bold"
-                    >
-                      İptal
-                    </button>
-                  )}
-                  <button type="submit" className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow">
-                    {editingLogId ? '💾 Değişiklikleri Kaydet' : '✅ Tutanağı Kaydet'}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-base font-extrabold text-slate-900">
-                  🗂️ Günlük Kaydedilen Nöbet Tutanakları
-                </h3>
-                <span className="text-xs text-slate-500">Mavi butona tıklayarak o güne ait TÜM kayıtları birleştirilmiş PDF çıktısı alabilirsiniz.</span>
-              </div>
-
-              {sortedDates.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-4 bg-white p-6 rounded-2xl border border-slate-200">Henüz kaydedilmiş bir nöbet tutanağı bulunmamaktadır.</p>
-              ) : (
-                sortedDates.map((date: string) => {
-                  const dayLogs = groupedLogs[date];
-                  return (
-                    <div key={date} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                      <div className="bg-slate-50 border-b border-slate-200 p-4 flex flex-wrap justify-between items-center gap-3">
-                        <span className="font-extrabold text-sm text-[#006bb6]">📅 {date} Tarihli Tutanaklar</span>
-                        <button
-                          type="button"
-                          onClick={() => setPdfModalDate(date)}
-                          className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5"
-                        >
-                          🖨️ Birleştirilmiş Günlük PDF Çıktısı Al
-                        </button>
-                      </div>
-                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {dayLogs.map((log: any) => (
-                          <div key={log.id} className="border border-slate-200 p-3 rounded-xl bg-white text-xs space-y-2">
-                            <div className="flex justify-between items-center font-bold text-slate-800 border-b pb-2">
-                              <span>{log.seans}</span>
-                              <button onClick={() => startEditLog(log)} className="text-amber-600 hover:underline">✏️ Düzenle</button>
-                            </div>
-                            <div className="text-slate-600 line-clamp-3 leading-relaxed">
-                              {log.notlar || 'Not girilmemiş.'}
-                            </div>
+                      {st.status === 'yok' && (
+                        <div className="mt-3 pt-3 border-t border-rose-100 bg-rose-50/60 p-2.5 rounded-xl flex flex-wrap justify-between items-center gap-2">
+                          <span className="text-[11px] font-bold text-rose-800">🚨 Veliye WhatsApp Devamsızlık Mesajı:</span>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => sendAbsenceWhatsApp(st, 'anne')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📲 Anneye Gönder ({st.anneTel || 'Yok'})</button>
+                            <button onClick={() => sendAbsenceWhatsApp(st, 'baba')} className="bg-[#006bb6] hover:bg-[#005694] text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📲 Babaya Gönder ({st.babaTel || 'Yok'})</button>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  );
-                })
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'izinler' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm space-y-3">
-            <h2 className="text-base font-extrabold text-slate-900">🟡 Veli Onaylı İzinli Öğrenciler</h2>
-            {(store?.leaves || []).length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Kayıtlı izin bulunmamaktadır.</p>
-            ) : (
-              (store?.leaves || []).map((lv: any) => (
-                <div key={lv.id} className="p-3 border rounded-xl bg-amber-50/40 flex justify-between items-center text-xs">
-                  <div>
-                    <strong className="text-slate-900">{lv.studentName} (Oda {lv.oda})</strong>
-                    <span className="ml-2 bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">{lv.tip}</span>
-                    <p className="text-slate-600 mt-1">{lv.aciklama}</p>
+          {activeTab === 'defter' && (
+            <div className="space-y-6">
+              <div className={`p-6 rounded-2xl border border-t-4 shadow-sm space-y-4 ${editingLogId ? 'bg-amber-50 border-amber-300 border-t-amber-500' : 'bg-white border-slate-200 border-t-[#006bb6]'}`}>
+                <h2 className="text-base font-extrabold text-slate-900">
+                  {editingLogId ? '✏️ Nöbet Defteri Kaydını ve Belletmen İsimlerini Düzenle' : '📖 Resmî Pansiyon Nöbet Defteri Tutanağı Yaz'}
+                </h2>
+                <form onSubmit={handleSaveOrUpdateDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                  <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                  <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3 bg-white">
+                    <option value="1. Etüt Yoklaması (19:30)">1. Etüt Yoklaması (19:30)</option>
+                    <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
+                    <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
+                  </select>
+                  <input placeholder="Erkek Belletmen 1 Adı" value={dutyLogForm.erkekBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                  <input placeholder="Erkek Belletmen 2 Adı" value={dutyLogForm.erkekBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, erkekBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                  <input placeholder="Kız Belletmen 1 Adı" value={dutyLogForm.kizBelletmen1} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen1: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                  <input placeholder="Kız Belletmen 2 Adı" value={dutyLogForm.kizBelletmen2} onChange={(e) => setDutyLogForm({ ...dutyLogForm, kizBelletmen2: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
+                  <textarea rows={3} placeholder="Nöbet vukuat ve yoklama notları..." value={dutyLogForm.notlar} onChange={(e) => setDutyLogForm({ ...dutyLogForm, notlar: e.target.value })} className="md:col-span-4 p-2.5 border rounded-xl bg-white" />
+                  <div className="md:col-span-4 flex justify-end gap-2">
+                    {editingLogId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingLogId(null);
+                          setDutyLogForm({ tarih: new Date().toISOString().split('T')[0], seans: 'Gece Yat Yoklaması (22:00)', erkekBelletmen1: '', erkekBelletmen2: '', kizBelletmen1: '', kizBelletmen2: '', notlar: '' });
+                        }}
+                        className="bg-slate-400 text-white px-5 py-2.5 rounded-xl font-bold"
+                      >
+                        İptal
+                      </button>
+                    )}
+                    <button type="submit" className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow">
+                      {editingLogId ? '💾 Değişiklikleri Kaydet' : '✅ Tutanağı Kaydet'}
+                    </button>
                   </div>
-                  <div className="text-right font-bold text-slate-600">{lv.baslangic} → {lv.bitis}</div>
+                </form>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    🗂️ Günlük Kaydedilen Nöbet Tutanakları
+                  </h3>
+                  <span className="text-xs text-slate-500">Mavi butona tıklayarak o güne ait TÜM kayıtları birleştirilmiş PDF çıktısı alabilirsiniz.</span>
                 </div>
-              ))
-            )}
-          </div>
-        )}
-      </main>
+
+                {sortedDates.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-4 bg-white p-6 rounded-2xl border border-slate-200">Henüz kaydedilmiş bir nöbet tutanağı bulunmamaktadır.</p>
+                ) : (
+                  sortedDates.map((date: string) => {
+                    const dayLogs = groupedLogs[date];
+                    return (
+                      <div key={date} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="bg-slate-50 border-b border-slate-200 p-4 flex flex-wrap justify-between items-center gap-3">
+                          <span className="font-extrabold text-sm text-[#006bb6]">📅 {date} Tarihli Tutanaklar</span>
+                          <button
+                            type="button"
+                            onClick={() => setPdfModalDate(date)}
+                            className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+                          >
+                            🖨️ Birleştirilmiş Günlük PDF Çıktısı Al
+                          </button>
+                        </div>
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {dayLogs.map((log: any) => (
+                            <div key={log.id} className="border border-slate-200 p-3 rounded-xl bg-white text-xs space-y-2">
+                              <div className="flex justify-between items-center font-bold text-slate-800 border-b pb-2">
+                                <span>{log.seans}</span>
+                                <button onClick={() => startEditLog(log)} className="text-amber-600 hover:underline">✏️ Düzenle</button>
+                              </div>
+                              <div className="text-slate-600 line-clamp-3 leading-relaxed">
+                                {log.notlar || 'Not girilmemiş.'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'izinler' && (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 border-t-4 border-t-[#006bb6] shadow-sm space-y-3">
+              <h2 className="text-base font-extrabold text-slate-900">🟡 Veli Onaylı İzinli Öğrenciler</h2>
+              {(store?.leaves || []).length === 0 ? (
+                <p className="text-xs text-slate-400 italic">Kayıtlı izin bulunmamaktadır.</p>
+              ) : (
+                (store?.leaves || []).map((lv: any) => (
+                  <div key={lv.id} className="p-3 border rounded-xl bg-amber-50/40 flex justify-between items-center text-xs">
+                    <div>
+                      <strong className="text-slate-900">{lv.studentName} (Oda {lv.oda})</strong>
+                      <span className="ml-2 bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">{lv.tip}</span>
+                      <p className="text-slate-600 mt-1">{lv.aciklama}</p>
+                    </div>
+                    <div className="text-right font-bold text-slate-600">{lv.baslangic} → {lv.bitis}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* =================================================================== */}
       {/* 📄 MEB ANTETLİ A4 GÜNLÜK BİRLEŞTİRİLMİŞ PDF ÇIKTI MODALI */}
       {/* =================================================================== */}
       {pdfModalDate && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] flex flex-col overflow-hidden">
-            {/* Modal Üst Bilgi Barı */}
-            <div className="bg-[#006bb6] text-white p-4 flex justify-between items-center no-print">
+        <div className="print-modal-wrapper fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="print-modal-box bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] flex flex-col overflow-hidden">
+            {/* Modal Üst Bilgi Barı (Yazdırırken Gizlenir) */}
+            <div className="no-print-area bg-[#006bb6] text-white p-4 flex justify-between items-center">
               <span className="font-extrabold text-sm">📄 Resmî Günlük Nöbet Raporu Önizlemesi ({pdfModalDate})</span>
               <div className="flex gap-2">
                 <button
@@ -594,85 +662,85 @@ export default function BelletmenPage() {
             </div>
 
             {/* A4 Kağıt Tasarım Alanı */}
-            <div className="p-6 sm:p-10 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
-              <div className="bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-[15mm] text-slate-900 box-border font-serif text-[11pt] leading-normal">
+            <div className="print-scroll-container p-4 sm:p-8 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
+              <div className="print-a4-sheet bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-[14mm] text-slate-900 box-border font-serif text-[10.5pt] leading-snug">
                 {/* Antet */}
-                <div className="text-center border-b-2 border-[#006bb6] pb-3 mb-5">
-                  <h1 className="m-0 text-[15pt] font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
-                  <h2 className="m-1 text-[12pt] font-bold text-[#006bb6]">İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
-                  <p className="m-1 text-[10pt] font-bold uppercase">Öğrenci Pansiyonu Günlük Nöbetçi Belletmen Birleştirilmiş Tutanağı</p>
+                <div className="text-center border-b-2 border-[#006bb6] pb-2.5 mb-4">
+                  <h1 className="m-0 text-[14pt] font-bold uppercase tracking-wide">T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
+                  <h2 className="m-0.5 text-[11.5pt] font-bold text-[#006bb6]">İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
+                  <p className="m-0.5 text-[9.5pt] font-bold uppercase text-slate-700">Öğrenci Pansiyonu Günlük Nöbetçi Belletmen Birleştirilmiş Tutanağı</p>
                 </div>
 
                 {/* Meta Bilgiler */}
-                <table className="w-full border-collapse mb-4 text-[10.5pt]">
+                <table className="w-full border-collapse mb-3.5 text-[10pt]">
                   <tbody>
                     <tr>
-                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Nöbet Tarihi</td>
-                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalDate}</td>
-                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Birleştirilen Seanslar</td>
-                      <td className="border border-slate-400 p-2 w-[28%] font-semibold text-xs leading-tight">{pdfSeansText}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-1.5 font-bold w-[22%]">Nöbet Tarihi</td>
+                      <td className="border border-slate-400 p-1.5 w-[28%] font-semibold">{pdfModalDate}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-1.5 font-bold w-[22%]">Birleştirilen Seanslar</td>
+                      <td className="border border-slate-400 p-1.5 w-[28%] font-semibold text-[9pt] leading-tight">{pdfSeansText}</td>
                     </tr>
                     <tr>
-                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Erkek Pansiyonu Nöbetçileri</td>
-                      <td className="border border-slate-400 p-2 text-xs">{pdfMBells.join(' - ') || 'Belirtilmedi'}</td>
-                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Kız Pansiyonu Nöbetçileri</td>
-                      <td className="border border-slate-400 p-2 text-xs">{pdfFBells.join(' - ') || 'Belirtilmedi'}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-1.5 font-bold">Erkek Pansiyonu Nöbetçileri</td>
+                      <td className="border border-slate-400 p-1.5 text-[9.5pt]">{pdfMBells.join(' - ') || 'Belirtilmedi'}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-1.5 font-bold">Kız Pansiyonu Nöbetçileri</td>
+                      <td className="border border-slate-400 p-1.5 text-[9.5pt]">{pdfFBells.join(' - ') || 'Belirtilmedi'}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Mevcut Özeti */}
-                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
+                <div className="font-bold text-[#006bb6] text-[10.5pt] mt-3 mb-1 uppercase border-b border-slate-300 pb-0.5">
                   1. Pansiyon Günlük Mevcut Özeti ({allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})
                 </div>
-                <table className="w-full border-collapse mb-4 text-[10.5pt] text-center">
+                <table className="w-full border-collapse mb-3.5 text-[10pt] text-center">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border border-slate-400 p-2">Kayıtlı Toplam</th>
-                      <th className="border border-slate-400 p-2">Mevcut (Var)</th>
-                      <th className="border border-slate-400 p-2">Evci / İzinli</th>
-                      <th className="border border-slate-400 p-2">Yok (Devamsız)</th>
+                      <th className="border border-slate-400 p-1.5">Kayıtlı Toplam</th>
+                      <th className="border border-slate-400 p-1.5">Mevcut (Var)</th>
+                      <th className="border border-slate-400 p-1.5">Evci / İzinli</th>
+                      <th className="border border-slate-400 p-1.5">Yok (Devamsız)</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-slate-400 p-2 font-bold text-base">{allStudents.length}</td>
-                      <td className="border border-slate-400 p-2 font-bold text-base text-emerald-700">
-                        {allStudents.length - finalPdfYokList.length - izinCount}
+                      <td className="border border-slate-400 p-1.5 font-bold text-[11pt]">{allStudents.length}</td>
+                      <td className="border border-slate-400 p-1.5 font-bold text-[11pt] text-emerald-700">
+                        {Math.max(0, allStudents.length - finalPdfYokList.length - izinCount)}
                       </td>
-                      <td className="border border-slate-400 p-2 font-bold text-base text-amber-700">{izinCount}</td>
-                      <td className="border border-slate-400 p-2 font-bold text-base text-rose-700">{finalPdfYokList.length}</td>
+                      <td className="border border-slate-400 p-1.5 font-bold text-[11pt] text-amber-700">{izinCount}</td>
+                      <td className="border border-slate-400 p-1.5 font-bold text-[11pt] text-rose-700">{finalPdfYokList.length}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Devamsızlar Listesi */}
-                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
+                <div className="font-bold text-[#006bb6] text-[10.5pt] mt-3 mb-1 uppercase border-b border-slate-300 pb-0.5">
                   2. Gün İçinde Yoklamada Bulunmayan (Devamsız) Öğrenciler
                 </div>
-                <table className="w-full border-collapse mb-4 text-[10.5pt]">
+                <table className="w-full border-collapse mb-3.5 text-[9.5pt]">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border border-slate-400 p-2 w-[8%] text-center">Sıra</th>
-                      <th className="border border-slate-400 p-2 text-left">Öğrenci Adı Soyadı</th>
-                      <th className="border border-slate-400 p-2 w-[22%] text-center">Kat / Oda No</th>
-                      <th className="border border-slate-400 p-2 w-[30%] text-center">Yok Yazıldığı Seanslar</th>
+                      <th className="border border-slate-400 p-1.5 w-[8%] text-center">Sıra</th>
+                      <th className="border border-slate-400 p-1.5 text-left">Öğrenci Adı Soyadı</th>
+                      <th className="border border-slate-400 p-1.5 w-[22%] text-center">Kat / Oda No</th>
+                      <th className="border border-slate-400 p-1.5 w-[34%] text-center">Yok Yazıldığı Seanslar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {finalPdfYokList.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="border border-slate-400 p-3 text-center text-emerald-700 font-bold">
+                        <td colSpan={4} className="border border-slate-400 p-2.5 text-center text-emerald-700 font-bold">
                           Bu güne ait devamsız (yok) öğrenci kaydı bulunmamaktadır.
                         </td>
                       </tr>
                     ) : (
                       finalPdfYokList.map((s: any, idx: number) => (
                         <tr key={s.id}>
-                          <td className="border border-slate-400 p-2 text-center">{idx + 1}</td>
-                          <td className="border border-slate-400 p-2 font-bold">{s.name}</td>
-                          <td className="border border-slate-400 p-2 text-center">{s.kat}. Kat / Oda {s.oda}</td>
-                          <td className="border border-slate-400 p-2 text-center text-[9pt] text-rose-700 font-semibold">
+                          <td className="border border-slate-400 p-1.5 text-center">{idx + 1}</td>
+                          <td className="border border-slate-400 p-1.5 font-bold">{s.name}</td>
+                          <td className="border border-slate-400 p-1.5 text-center">{s.kat}. Kat / Oda {s.oda}</td>
+                          <td className="border border-slate-400 p-1.5 text-center text-[8.5pt] text-rose-700 font-semibold">
                             {(s.missingSeans || ['Yoklama']).join(', ')}
                           </td>
                         </tr>
@@ -681,47 +749,49 @@ export default function BelletmenPage() {
                   </tbody>
                 </table>
 
-                {/* Vukuat ve Notlar */}
-                <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
-                  3. Günlük Nöbet Vukuat Raporu ve Birleştirilmiş Notlar
-                </div>
-                <div className="border border-slate-400 bg-slate-50/50 p-3 min-h-[120px] text-[9.5pt] whitespace-pre-wrap leading-relaxed">
-                  {pdfCombinedNotes || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}
-                </div>
+                {/* Vukuat ve Notlar + İmza Alanları (Bölünmez Blok) */}
+                <div className="avoid-break">
+                  <div className="font-bold text-[#006bb6] text-[10.5pt] mt-3 mb-1 uppercase border-b border-slate-300 pb-0.5">
+                    3. Günlük Nöbet Vukuat Raporu ve Birleştirilmiş Notlar
+                  </div>
+                  <div className="border border-slate-400 bg-slate-50/50 p-2.5 min-h-[90px] text-[9.5pt] whitespace-pre-wrap leading-relaxed">
+                    {pdfCombinedNotes || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}
+                  </div>
 
-                {/* İmza Alanları */}
-                <table className="w-full mt-8 text-center text-[10pt] border-collapse">
-                  <tbody>
-                    <tr>
-                      <td className="w-1/4 p-2 align-top">
-                        <div>Erkek Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfMBells[0] || '.........................'}</div>
-                        <div className="text-[8.5pt] text-slate-500">İmza</div>
-                      </td>
-                      <td className="w-1/4 p-2 align-top">
-                        <div>Erkek Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfMBells[1] || '.........................'}</div>
-                        <div className="text-[8.5pt] text-slate-500">İmza</div>
-                      </td>
-                      <td className="w-1/4 p-2 align-top">
-                        <div>Kız Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfFBells[0] || '.........................'}</div>
-                        <div className="text-[8.5pt] text-slate-500">İmza</div>
-                      </td>
-                      <td className="w-1/4 p-2 align-top">
-                        <div>Kız Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfFBells[1] || '.........................'}</div>
-                        <div className="text-[8.5pt] text-slate-500">İmza</div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                  {/* İmza Alanları */}
+                  <table className="w-full mt-6 text-center text-[9.5pt] border-collapse">
+                    <tbody>
+                      <tr>
+                        <td className="w-1/4 p-1.5 align-top">
+                          <div className="font-semibold text-slate-700">Erkek Pansiyonu Belletmen</div>
+                          <div className="mt-10 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfMBells[0] || '.........................'}</div>
+                          <div className="text-[8pt] text-slate-500">İmza</div>
+                        </td>
+                        <td className="w-1/4 p-1.5 align-top">
+                          <div className="font-semibold text-slate-700">Erkek Pansiyonu Belletmen</div>
+                          <div className="mt-10 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfMBells[1] || '.........................'}</div>
+                          <div className="text-[8pt] text-slate-500">İmza</div>
+                        </td>
+                        <td className="w-1/4 p-1.5 align-top">
+                          <div className="font-semibold text-slate-700">Kız Pansiyonu Belletmen</div>
+                          <div className="mt-10 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfFBells[0] || '.........................'}</div>
+                          <div className="text-[8pt] text-slate-500">İmza</div>
+                        </td>
+                        <td className="w-1/4 p-1.5 align-top">
+                          <div className="font-semibold text-slate-700">Kız Pansiyonu Belletmen</div>
+                          <div className="mt-10 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfFBells[1] || '.........................'}</div>
+                          <div className="text-[8pt] text-slate-500">İmza</div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
 
-                {/* Onay */}
-                <div className="text-center mt-8 text-[10.5pt]">
-                  <div className="font-bold">KONTROL EDEN / ONAYLAYAN</div>
-                  <div className="mt-10 font-bold">......................................................</div>
-                  <div className="text-[9.5pt]">Pansiyon Müdür Yardımcısı</div>
+                  {/* Onay */}
+                  <div className="text-center mt-6 text-[10pt]">
+                    <div className="font-bold">KONTROL EDEN / ONAYLAYAN</div>
+                    <div className="mt-8 font-bold">......................................................</div>
+                    <div className="text-[9pt] text-slate-700">Pansiyon Müdür Yardımcısı</div>
+                  </div>
                 </div>
               </div>
             </div>
