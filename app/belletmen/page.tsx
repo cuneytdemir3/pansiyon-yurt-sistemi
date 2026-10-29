@@ -33,8 +33,8 @@ export default function BelletmenPage() {
   });
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
-  // PDF Önizleme Modalı İçin Durum
-  const [pdfModalLog, setPdfModalLog] = useState<any>(null);
+  // PDF Önizleme Modalı İçin Durum (Artık Tarih Bazlı Birleştirme)
+  const [pdfModalDate, setPdfModalDate] = useState<string | null>(null);
 
   // 2. BÜTÜN USE-EFFECT'LER KESİNTİSİZ BURADA
   React.useEffect(() => { setMounted(true); }, []);
@@ -178,6 +178,8 @@ export default function BelletmenPage() {
       alert('Bu velinin telefon numarası sistemde kayıtlı değil!');
       return;
     }
+    
+    // GÜVENLİ VE TEK SATIRLIK WHATSAPP MESAJI
     const text = `*Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu*\n\nSayın ${parentName || 'Velimiz'},\nÖğrencimiz *${student.name}* (Oda ${student.oda}), ${activeDate} tarihli *${activeSeans}* yoklamasında *YOK* olarak işaretlenmiştir.\n\nBilgilerinize sunar, acil durumda nöbetçi belletmen öğretmenimizle iletişime geçmenizi rica ederiz.`;
 
     let sent = false;
@@ -277,18 +279,92 @@ export default function BelletmenPage() {
   }
 
   // 5. DEĞİŞKENLER VE ANA SAYFA ÇİZİMİ
-  const allStudents = (store?.students || []).filter((s: any) => s.cinsiyet === allowedGender);
-  const filteredStudents = allStudents.filter((s: any) => {
-    const katMatch = selectedKat === 'all' || Number(s.kat) === Number(selectedKat);
-    const searchMatch = !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase()) || String(s.oda).toLowerCase().includes(searchTerm.toLowerCase());
-    return katMatch && searchMatch;
-  });
+  const allStudents = (store?.students || [])
+    .filter((s: any) => s.cinsiyet === allowedGender)
+    .map((s: any) => {
+      let updatedS = { ...s };
+      const odaNo = Number(s.oda);
+      
+      // AKILLI KAT FİLTRELEME (Oda numarasına göre katı otomatik belirle)
+      if (!isNaN(odaNo)) {
+        if (allowedGender === 'kiz') {
+          if (odaNo >= 1 && odaNo <= 20) updatedS.kat = 1;
+          else if (odaNo >= 21 && odaNo <= 40) updatedS.kat = 2;
+          else if (odaNo >= 41 && odaNo <= 60) updatedS.kat = 3;
+          else if (odaNo >= 61 && odaNo <= 80) updatedS.kat = 4;
+        } else if (allowedGender === 'erkek') {
+          if (odaNo >= 100 && odaNo < 200) updatedS.kat = 1;
+          else if (odaNo >= 200 && odaNo < 300) updatedS.kat = 2;
+          else if (odaNo >= 300 && odaNo < 400) updatedS.kat = 3;
+          else if (odaNo >= 400 && odaNo < 500) updatedS.kat = 4;
+        }
+      }
+      return updatedS;
+    });
 
-  const varCount = allStudents.filter((s: any) => s.status === 'var').length;
-  const yokCount = allStudents.filter((s: any) => s.status === 'yok').length;
-  const izinCount = allStudents.filter((s: any) => s.status === 'izinli').length;
+  const filteredStudents = allStudents
+    .filter((s: any) => {
+      const odaStr = String(s.oda).trim();
+      
+      // Belletmen odalarını SADECE Erkek Pansiyonunda filtrele (107, 207 vb.)
+      if (allowedGender === 'erkek' && odaStr.endsWith('07')) {
+        return false;
+      }
+
+      // Seçili kat ve arama motoru filtresi
+      const katMatch = selectedKat === 'all' || Number(s.kat) === Number(selectedKat);
+      const searchMatch = !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase()) || odaStr.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      return katMatch && searchMatch;
+    })
+    .sort((a: any, b: any) => {
+      return Number(a.oda) - Number(b.oda); // Odaları küçükten büyüğe sırala
+    });
+
+  const varCount = filteredStudents.filter((s: any) => s.status === 'var').length;
+  const yokCount = filteredStudents.filter((s: any) => s.status === 'yok').length;
+  const izinCount = filteredStudents.filter((s: any) => s.status === 'izinli').length;
 
   const pdfYokStudents = allStudents.filter((s: any) => s.status === 'yok');
+
+  // GÜNLÜK GRUPLAMA (Aynı güne ait etüt ve yat kayıtlarını birleştirmek için)
+  const groupedLogs = (store?.dutyLogs || []).reduce((acc: any, log: any) => {
+    if (!acc[log.tarih]) acc[log.tarih] = [];
+    acc[log.tarih].push(log);
+    return acc;
+  }, {});
+  const sortedDates = Object.keys(groupedLogs).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  // PDF BİRLEŞTİRME HESAPLAMALARI
+  let pdfSeansText = '';
+  let pdfMBells: string[] = [];
+  let pdfFBells: string[] = [];
+  let pdfCombinedNotes = '';
+  let finalPdfYokList: any[] = [];
+
+  if (pdfModalDate) {
+    const dateLogs = groupedLogs[pdfModalDate] || [];
+    pdfSeansText = Array.from(new Set(dateLogs.map((l: any) => l.seans))).join(' + ');
+    pdfMBells = Array.from(new Set(dateLogs.flatMap((l: any) => [l.erkekBelletmen1, l.erkekBelletmen2]).filter(Boolean)));
+    pdfFBells = Array.from(new Set(dateLogs.flatMap((l: any) => [l.kizBelletmen1, l.kizBelletmen2]).filter(Boolean)));
+    pdfCombinedNotes = dateLogs.map((l: any) => `[${l.seans}]\n${l.notlar || 'Vukuat yok.'}`).join('\n\n');
+
+    // O güne ait arşivlenmiş devamsızlık geçmişini bul, yoksa canlı veriyi kullan
+    const historyYok = (store?.attendanceHistory || []).filter((h: any) => h.tarih === pdfModalDate && h.status === 'yok');
+    if (historyYok.length > 0) {
+      const uniqueYok = new Map();
+      historyYok.forEach((h: any) => {
+        const st = allStudents.find((s: any) => s.id === h.studentId);
+        if (st) {
+          if (!uniqueYok.has(h.studentId)) uniqueYok.set(h.studentId, { ...st, missingSeans: [h.seans] });
+          else uniqueYok.get(h.studentId).missingSeans.push(h.seans);
+        }
+      });
+      finalPdfYokList = Array.from(uniqueYok.values());
+    } else if (pdfModalDate === activeDate) {
+      finalPdfYokList = pdfYokStudents;
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
@@ -313,7 +389,7 @@ export default function BelletmenPage() {
 
       <main className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs text-slate-500 font-bold">Toplam Öğrenci</span><p className="text-2xl font-black text-slate-900">{allStudents.length}</p></div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs text-slate-500 font-bold">Listelenen Öğrenci</span><p className="text-2xl font-black text-slate-900">{filteredStudents.length}</p></div>
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl"><span className="text-xs text-emerald-700 font-bold">🟢 Yurtta (Var)</span><p className="text-2xl font-black text-emerald-900">{varCount}</p></div>
           <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl"><span className="text-xs text-rose-700 font-bold">🔴 Yoklamada Yok</span><p className="text-2xl font-black text-rose-900">{yokCount}</p></div>
           <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl"><span className="text-xs text-amber-700 font-bold">🟡 Evci / İzinli</span><p className="text-2xl font-black text-amber-900">{izinCount}</p></div>
@@ -321,7 +397,7 @@ export default function BelletmenPage() {
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button onClick={() => setActiveTab('yoklama')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'yoklama' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📋 Etüt & Yat Yoklaması ({allStudents.length})</button>
-          <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Nöbet Defteri & PDF Çıktı ({store?.dutyLogs?.length || 0})</button>
+          <button onClick={() => setActiveTab('defter')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'defter' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>📖 Nöbet Defteri & PDF Çıktı ({sortedDates.length} Gün)</button>
           <button onClick={() => setActiveTab('izinler')} className={`px-5 py-2.5 rounded-xl font-bold text-xs transition ${activeTab === 'izinler' ? 'bg-[#006bb6] text-white shadow' : 'bg-white border text-slate-600'}`}>🟡 İzinli Öğrenci Listesi ({store?.leaves?.length || 0})</button>
         </div>
 
@@ -346,7 +422,7 @@ export default function BelletmenPage() {
               <div className="flex flex-wrap gap-1.5">
                 {(['all', 1, 2, 3, 4] as const).map((k) => (
                   <button key={String(k)} onClick={() => setSelectedKat(k)} className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${selectedKat === k ? 'bg-[#006bb6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    {k === 'all' ? 'Tüm Katlar' : `${k}. Kat`}
+                    {k === 'all' ? 'Tüm Katlar' : `${k}. Kat Odaları`}
                   </button>
                 ))}
               </div>
@@ -396,7 +472,7 @@ export default function BelletmenPage() {
               <form onSubmit={handleSaveOrUpdateDutyLog} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
                 <input type="date" value={dutyLogForm.tarih} onChange={(e) => setDutyLogForm({ ...dutyLogForm, tarih: e.target.value })} className="p-2.5 border rounded-xl bg-white" />
                 <select value={dutyLogForm.seans} onChange={(e) => setDutyLogForm({ ...dutyLogForm, seans: e.target.value })} className="p-2.5 border rounded-xl font-bold md:col-span-3 bg-white">
-                  <option value="1. Etüt Yoklaması (19:30)">1. Etüt Yoklaması (19:30)</option>
+                  <option value="1. Etüt Yoklaması (19:30)">Etüt Yoklaması (19:30)</option>
                   <option value="2. Etüt Yoklaması (20:30)">2. Etüt Yoklaması (20:30)</option>
                   <option value="Gece Yat Yoklaması (22:00)">Gece Yat Yoklaması (22:00)</option>
                 </select>
@@ -425,51 +501,47 @@ export default function BelletmenPage() {
               </form>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-extrabold text-slate-900">
-                  🗂️ Kaydedilen Nöbet Defteri Tutanakları ({store?.dutyLogs?.length || 0})
+                  🗂️ Günlük Kaydedilen Nöbet Tutanakları
                 </h3>
-                <span className="text-xs text-slate-500">Butona tıklayarak açılan pencereden direkt PDF çıktısı alabilirsiniz.</span>
+                <span className="text-xs text-slate-500">Mavi butona tıklayarak o güne ait TÜM kayıtları birleştirilmiş PDF çıktısı alabilirsiniz.</span>
               </div>
 
-              {(store?.dutyLogs || []).length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-4">Henüz kaydedilmiş bir nöbet tutanağı bulunmamaktadır.</p>
+              {sortedDates.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-4 bg-white p-6 rounded-2xl border border-slate-200">Henüz kaydedilmiş bir nöbet tutanağı bulunmamaktadır.</p>
               ) : (
-                <div className="space-y-3">
-                  {(store?.dutyLogs || []).map((log: any) => (
-                    <div key={log.id} className="p-4 border border-slate-200 rounded-2xl bg-slate-50 space-y-3 text-xs">
-                      <div className="flex flex-wrap justify-between items-center gap-2">
-                        <span className="font-extrabold text-sm text-[#006bb6]">
-                          📅 {log.tarih} — {log.seans}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditLog(log)}
-                            className="bg-amber-100 hover:bg-amber-500 hover:text-white text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl font-bold transition"
-                          >
-                            ✏️ İsimleri / Notu Düzenle
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPdfModalLog(log)}
-                            className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-1.5 rounded-xl font-bold shadow-sm transition flex items-center gap-1.5"
-                          >
-                            🖨️ Resmî PDF Çıktısı Al
-                          </button>
-                        </div>
+                sortedDates.map((date: string) => {
+                  const dayLogs = groupedLogs[date];
+                  return (
+                    <div key={date} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                      <div className="bg-slate-50 border-b border-slate-200 p-4 flex flex-wrap justify-between items-center gap-3">
+                        <span className="font-extrabold text-sm text-[#006bb6]">📅 {date} Tarihli Tutanaklar</span>
+                        <button
+                          type="button"
+                          onClick={() => setPdfModalDate(date)}
+                          className="bg-[#006bb6] hover:bg-[#005694] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+                        >
+                          🖨️ Birleştirilmiş Günlük PDF Çıktısı Al
+                        </button>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white p-3 rounded-xl border border-slate-200">
-                        <div><strong>👨 Erkek Pansiyonu Nöbetçileri:</strong> {log.erkekBelletmen1 || '-'}, {log.erkekBelletmen2 || '-'}</div>
-                        <div><strong>👩 Kız Pansiyonu Nöbetçileri:</strong> {log.kizBelletmen1 || '-'}, {log.kizBelletmen2 || '-'}</div>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-700">
-                        <strong>Vukuat / Nöbet Notu:</strong> {log.notlar || 'Normal.'}
+                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {dayLogs.map((log: any) => (
+                          <div key={log.id} className="border border-slate-200 p-3 rounded-xl bg-white text-xs space-y-2">
+                            <div className="flex justify-between items-center font-bold text-slate-800 border-b pb-2">
+                              <span>{log.seans}</span>
+                              <button onClick={() => startEditLog(log)} className="text-amber-600 hover:underline">✏️ Düzenle</button>
+                            </div>
+                            <div className="text-slate-600 line-clamp-3 leading-relaxed">
+                              {log.notlar || 'Not girilmemiş.'}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -497,14 +569,14 @@ export default function BelletmenPage() {
       </main>
 
       {/* =================================================================== */}
-      {/* 📄 MEB ANTETLİ A4 PDF ÇIKTI MODALI (Tarayıcı Engelini Kesinlikle Aşar) */}
+      {/* 📄 MEB ANTETLİ A4 GÜNLÜK BİRLEŞTİRİLMİŞ PDF ÇIKTI MODALI */}
       {/* =================================================================== */}
-      {pdfModalLog && (
+      {pdfModalDate && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] flex flex-col overflow-hidden">
             {/* Modal Üst Bilgi Barı */}
             <div className="bg-[#006bb6] text-white p-4 flex justify-between items-center no-print">
-              <span className="font-extrabold text-sm">📄 Resmî Nöbet Defteri Tutanak Önizlemesi</span>
+              <span className="font-extrabold text-sm">📄 Resmî Günlük Nöbet Raporu Önizlemesi ({pdfModalDate})</span>
               <div className="flex gap-2">
                 <button
                   onClick={() => window.print()}
@@ -513,7 +585,7 @@ export default function BelletmenPage() {
                   🖨️ PDF İndir / Yazdır
                 </button>
                 <button
-                  onClick={() => setPdfModalLog(null)}
+                  onClick={() => setPdfModalDate(null)}
                   className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition"
                 >
                   ✕ Kapat
@@ -528,7 +600,7 @@ export default function BelletmenPage() {
                 <div className="text-center border-b-2 border-[#006bb6] pb-3 mb-5">
                   <h1 className="m-0 text-[15pt] font-bold uppercase">T.C. MİLLÎ EĞİTİM BAKANLIĞI</h1>
                   <h2 className="m-1 text-[12pt] font-bold text-[#006bb6]">İSTANBUL — PROF. DR. MÜMTAZ TURHAN SOSYAL BİLİMLER LİSESİ</h2>
-                  <p className="m-1 text-[10pt] font-bold uppercase">Öğrenci Pansiyonu Günlük Nöbetçi Belletmen Tutanağı</p>
+                  <p className="m-1 text-[10pt] font-bold uppercase">Öğrenci Pansiyonu Günlük Nöbetçi Belletmen Birleştirilmiş Tutanağı</p>
                 </div>
 
                 {/* Meta Bilgiler */}
@@ -536,22 +608,22 @@ export default function BelletmenPage() {
                   <tbody>
                     <tr>
                       <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Nöbet Tarihi</td>
-                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalLog.tarih}</td>
-                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Yoklama Seansı</td>
-                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalLog.seans}</td>
+                      <td className="border border-slate-400 p-2 w-[28%]">{pdfModalDate}</td>
+                      <td className="border border-slate-400 bg-slate-50 p-2 font-bold w-[22%]">Birleştirilen Seanslar</td>
+                      <td className="border border-slate-400 p-2 w-[28%] font-semibold text-xs leading-tight">{pdfSeansText}</td>
                     </tr>
                     <tr>
                       <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Erkek Pansiyonu Nöbetçileri</td>
-                      <td className="border border-slate-400 p-2">{[pdfModalLog.erkekBelletmen1, pdfModalLog.erkekBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+                      <td className="border border-slate-400 p-2 text-xs">{pdfMBells.join(' - ') || 'Belirtilmedi'}</td>
                       <td className="border border-slate-400 bg-slate-50 p-2 font-bold">Kız Pansiyonu Nöbetçileri</td>
-                      <td className="border border-slate-400 p-2">{[pdfModalLog.kizBelletmen1, pdfModalLog.kizBelletmen2].filter(Boolean).join(' - ') || 'Belirtilmedi'}</td>
+                      <td className="border border-slate-400 p-2 text-xs">{pdfFBells.join(' - ') || 'Belirtilmedi'}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Mevcut Özeti */}
                 <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
-                  1. Pansiyon Yoklama ve Mevcut Özeti ({allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})
+                  1. Pansiyon Günlük Mevcut Özeti ({allowedGender === 'kiz' ? 'Kız Pansiyonu' : 'Erkek Pansiyonu'})
                 </div>
                 <table className="w-full border-collapse mb-4 text-[10.5pt] text-center">
                   <thead>
@@ -565,38 +637,44 @@ export default function BelletmenPage() {
                   <tbody>
                     <tr>
                       <td className="border border-slate-400 p-2 font-bold text-base">{allStudents.length}</td>
-                      <td className="border border-slate-400 p-2 font-bold text-base text-emerald-700">{varCount}</td>
+                      <td className="border border-slate-400 p-2 font-bold text-base text-emerald-700">
+                        {allStudents.length - finalPdfYokList.length - izinCount}
+                      </td>
                       <td className="border border-slate-400 p-2 font-bold text-base text-amber-700">{izinCount}</td>
-                      <td className="border border-slate-400 p-2 font-bold text-base text-rose-700">{pdfYokStudents.length}</td>
+                      <td className="border border-slate-400 p-2 font-bold text-base text-rose-700">{finalPdfYokList.length}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Devamsızlar Listesi */}
                 <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
-                  2. Yoklamada Bulunmayan (Devamsız) Öğrenciler
+                  2. Gün İçinde Yoklamada Bulunmayan (Devamsız) Öğrenciler
                 </div>
                 <table className="w-full border-collapse mb-4 text-[10.5pt]">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border border-slate-400 p-2 w-[12%] text-center">Sıra</th>
+                      <th className="border border-slate-400 p-2 w-[8%] text-center">Sıra</th>
                       <th className="border border-slate-400 p-2 text-left">Öğrenci Adı Soyadı</th>
-                      <th className="border border-slate-400 p-2 w-[28%] text-center">Kat / Oda No</th>
+                      <th className="border border-slate-400 p-2 w-[22%] text-center">Kat / Oda No</th>
+                      <th className="border border-slate-400 p-2 w-[30%] text-center">Yok Yazıldığı Seanslar</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pdfYokStudents.length === 0 ? (
+                    {finalPdfYokList.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="border border-slate-400 p-3 text-center text-emerald-700 font-bold">
-                          Yoklamada devamsız (yok) öğrenci bulunmamaktadır.
+                        <td colSpan={4} className="border border-slate-400 p-3 text-center text-emerald-700 font-bold">
+                          Bu güne ait devamsız (yok) öğrenci kaydı bulunmamaktadır.
                         </td>
                       </tr>
                     ) : (
-                      pdfYokStudents.map((s: any, idx: number) => (
+                      finalPdfYokList.map((s: any, idx: number) => (
                         <tr key={s.id}>
                           <td className="border border-slate-400 p-2 text-center">{idx + 1}</td>
                           <td className="border border-slate-400 p-2 font-bold">{s.name}</td>
                           <td className="border border-slate-400 p-2 text-center">{s.kat}. Kat / Oda {s.oda}</td>
+                          <td className="border border-slate-400 p-2 text-center text-[9pt] text-rose-700 font-semibold">
+                            {(s.missingSeans || ['Yoklama']).join(', ')}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -605,10 +683,10 @@ export default function BelletmenPage() {
 
                 {/* Vukuat ve Notlar */}
                 <div className="font-bold text-[#006bb6] text-[11pt] mt-4 mb-1 uppercase border-b border-slate-300 pb-1">
-                  3. Nöbet Vukuat Raporu, Etüt ve Gece Yoklaması Notları
+                  3. Günlük Nöbet Vukuat Raporu ve Birleştirilmiş Notlar
                 </div>
-                <div className="border border-slate-400 bg-slate-50/50 p-3 min-h-[120px] text-[10.5pt] whitespace-pre-wrap">
-                  {pdfModalLog.notlar || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}
+                <div className="border border-slate-400 bg-slate-50/50 p-3 min-h-[120px] text-[9.5pt] whitespace-pre-wrap leading-relaxed">
+                  {pdfCombinedNotes || 'Nöbet süresince herhangi bir olumsuz vukuat yaşanmamış olup etüt ve yat yoklamaları zamanında alınmıştır.'}
                 </div>
 
                 {/* İmza Alanları */}
@@ -617,22 +695,22 @@ export default function BelletmenPage() {
                     <tr>
                       <td className="w-1/4 p-2 align-top">
                         <div>Erkek Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.erkekBelletmen1 || '.........................'}</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfMBells[0] || '.........................'}</div>
                         <div className="text-[8.5pt] text-slate-500">İmza</div>
                       </td>
                       <td className="w-1/4 p-2 align-top">
                         <div>Erkek Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.erkekBelletmen2 || '.........................'}</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfMBells[1] || '.........................'}</div>
                         <div className="text-[8.5pt] text-slate-500">İmza</div>
                       </td>
                       <td className="w-1/4 p-2 align-top">
                         <div>Kız Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.kizBelletmen1 || '.........................'}</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfFBells[0] || '.........................'}</div>
                         <div className="text-[8.5pt] text-slate-500">İmza</div>
                       </td>
                       <td className="w-1/4 p-2 align-top">
                         <div>Kız Pansiyonu Belletmen</div>
-                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold">{pdfModalLog.kizBelletmen2 || '.........................'}</div>
+                        <div className="mt-12 border-t border-dotted border-slate-600 pt-1 font-bold line-clamp-1">{pdfFBells[1] || '.........................'}</div>
                         <div className="text-[8.5pt] text-slate-500">İmza</div>
                       </td>
                     </tr>
