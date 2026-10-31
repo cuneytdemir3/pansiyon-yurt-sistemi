@@ -2,6 +2,7 @@
 
 import './globals.css';
 import { useEffect } from 'react';
+import Chatbot from './components/Chatbot'; // <-- Chatbot bileşenini import ettik
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -29,6 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="antialiased select-none">
         {children}
+        
+        {/* SBL Dijital Asistan (Chatbot) Tüm Sayfalarda Çalışacak */}
+        <Chatbot />
       </body>
     </html>
   );
