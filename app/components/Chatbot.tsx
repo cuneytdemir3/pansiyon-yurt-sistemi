@@ -21,15 +21,15 @@ export default function Chatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen, showIntro]);
 
-  // Butona tıklandığında önce lale animasyonunu oynat, sonra sohbeti aç
+  // Butona tıklandığında lale animasyonunu oynat ve sohbeti aç
   const toggleChat = () => {
     if (!isOpen) {
       setIsOpen(true);
       setShowIntro(true);
-      // 1.8 saniye sonra animasyonu bitirip mesajlaşma arayüzünü göster
+      // Animasyon süresini 2 saniyeye çıkardık (izleme keyfi için)
       setTimeout(() => {
         setShowIntro(false);
-      }, 1800);
+      }, 2000);
     } else {
       setIsOpen(false);
       setShowIntro(false);
@@ -64,7 +64,6 @@ export default function Chatbot() {
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
 
-    // Bota biraz "düşünme" payı verip yanıt verdiriyoruz
     setTimeout(() => {
       const botMsg: Message = { id: Date.now() + 1, sender: 'bot', text: getBotResponse(userMsg.text) };
       setMessages((prev) => [...prev, botMsg]);
@@ -77,27 +76,72 @@ export default function Chatbot() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
+      
+      {/* ÖZEL ANİMASYON CSS'LERİ */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes bloom {
+          0% { transform: scale(0) translateY(50px); opacity: 0; }
+          60% { transform: scale(1.1) translateY(-10px); opacity: 1; }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        @keyframes sway {
+          0%, 100% { transform: rotate(-3deg); }
+          50% { transform: rotate(3deg); }
+        }
+        @keyframes petal-pulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.05); filter: brightness(1.2); }
+        }
+        @keyframes glowing-bg {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .animate-bloom { animation: bloom 1s cubic-bezier(0.25, 1, 0.5, 1) forwards; transform-origin: bottom center; }
+        .animate-sway { animation: sway 3s ease-in-out infinite; transform-origin: bottom center; }
+        .animate-petal { animation: petal-pulse 2s ease-in-out infinite; transform-origin: bottom center; }
+        .glowing-bg { background-size: 200% 200%; animation: glowing-bg 3s ease infinite; }
+      `}} />
+
       {/* CHAT PENCERESİ */}
       {isOpen && (
         <div className="bg-white w-80 sm:w-96 h-[28rem] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden mb-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
           
           {showIntro ? (
             /* ETKİLEYİCİ LALE (TULIP) ANİMASYONU EKRANI */
-            <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-rose-50 via-white to-emerald-50">
-              <div className="relative animate-bounce duration-1000">
-                <svg viewBox="0 0 100 100" className="w-32 h-32 drop-shadow-2xl">
-                  {/* Gövde ve Yapraklar */}
-                  <path d="M50 90 Q 50 60 50 50" stroke="#16a34a" strokeWidth="6" fill="transparent" />
-                  <path d="M50 85 Q 30 70 30 50 Q 40 60 50 65" fill="#22c55e" className="animate-pulse" />
-                  <path d="M50 75 Q 70 65 70 45 Q 60 55 50 60" fill="#22c55e" className="animate-pulse" />
-                  {/* Kırmızı/Pembe Lale Çiçeği */}
-                  <path d="M25 45 C 25 70 40 80 50 80 C 60 80 75 70 75 45 C 75 25 60 20 50 40 C 40 20 25 25 25 45 Z" fill="#e11d48" />
-                  <path d="M35 40 C 35 60 45 70 50 70 C 55 70 65 60 65 40 C 65 20 55 15 50 35 C 45 15 35 20 35 40 Z" fill="#be185d" />
-                  <path d="M42 35 C 42 55 48 65 50 65 C 52 65 58 55 58 35 C 58 15 52 10 50 30 C 48 10 42 15 42 35 Z" fill="#fbcfe8" />
-                </svg>
+            <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-rose-50 via-white to-emerald-50 glowing-bg relative overflow-hidden">
+              
+              {/* Arka plan parlama efekti (Glow) */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-48 h-48 bg-rose-200/50 rounded-full blur-3xl animate-pulse"></div>
               </div>
-              <h3 className="mt-6 font-black text-rose-600 text-xl tracking-widest animate-pulse">SBL ASİSTAN</h3>
-              <p className="text-xs font-bold text-slate-400 mt-2">Sistem Başlatılıyor...</p>
+
+              {/* Lale İkonu - Bloom ve Sway (Büyüme ve Salınım) Kombinasyonu */}
+              <div className="relative animate-bloom">
+                <div className="animate-sway">
+                  <svg viewBox="0 0 100 100" className="w-40 h-40 drop-shadow-2xl">
+                    {/* Gövde ve Yapraklar */}
+                    <path d="M50 90 Q 50 60 50 50" stroke="#16a34a" strokeWidth="5" fill="transparent" strokeLinecap="round" />
+                    <path d="M50 85 Q 25 70 25 45 Q 35 55 50 65" fill="#22c55e" className="animate-petal" style={{ animationDelay: '0.2s' }} />
+                    <path d="M50 75 Q 75 65 75 45 Q 65 55 50 60" fill="#22c55e" className="animate-petal" style={{ animationDelay: '0.5s' }} />
+                    
+                    {/* Kırmızı/Pembe Lale Çiçeği */}
+                    <g className="animate-petal">
+                      {/* Arka Taç Yaprak */}
+                      <path d="M35 40 C 35 60 45 75 50 75 C 55 75 65 60 65 40 C 65 20 55 15 50 35 C 45 15 35 20 35 40 Z" fill="#be185d" />
+                      {/* Sol Taç Yaprak */}
+                      <path d="M25 45 C 25 70 40 75 50 75 C 50 75 40 50 35 30 C 30 15 25 25 25 45 Z" fill="#e11d48" />
+                      {/* Sağ Taç Yaprak */}
+                      <path d="M75 45 C 75 70 60 75 50 75 C 50 75 60 50 65 30 C 70 15 75 25 75 45 Z" fill="#e11d48" />
+                      {/* Orta Parlak Yaprak */}
+                      <path d="M42 35 C 42 60 48 70 50 70 C 52 70 58 60 58 35 C 58 15 52 10 50 30 C 48 10 42 15 42 35 Z" fill="#fbcfe8" />
+                    </g>
+                  </svg>
+                </div>
+              </div>
+              
+              <h3 className="mt-8 font-black text-rose-600 text-2xl tracking-widest z-10 animate-in fade-in slide-in-from-bottom-2 duration-700 delay-500">SBL ASİSTAN</h3>
+              <p className="text-[11px] font-bold text-slate-400 mt-2 z-10 animate-pulse">Lütfen bekleyin...</p>
             </div>
           ) : (
             /* MESAJLAŞMA ARAYÜZÜ */
