@@ -63,12 +63,26 @@ export default function AdminPage() {
     setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_import', rows }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBulkText(''); alert(data.message); } setLoading(false);
   };
   
-  const handleClearAllStudents = async () => { if (!confirm('Tüm öğrenci listesini sıfırlamak istediğinize emin misiniz?')) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_students' }) }); const data = await res.json(); if (data.success) setStore(data.store); };
+  // ÖĞRENCİ TOPLU SİLME
+  const handleClearAllStudents = async () => { 
+    if (!confirm('DİKKAT! Tüm öğrenci kayıtları, izinler ve devamsızlık geçmişi kalıcı olarak SİLİNECEKTİR. Emin misiniz?')) return; 
+    const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_students' }) }); 
+    const data = await res.json(); 
+    if (data.success) setStore(data.store); 
+  };
   
   const handleDeleteStudent = async (id: string) => { const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_student', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleAddBelletmen = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_belletmen', ...belForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBelForm({ name: '', cinsiyet: 'erkek', brans: '', phone: '', password: '1234' }); } setLoading(false); };
   
+  // BELLETMEN TOPLU SİLME YENİ EKLENDİ
+  const handleClearAllBelletmenler = async () => { 
+    if (!confirm('DİKKAT! Tüm belletmen öğretmen kayıtları ve şifreleri kalıcı olarak SİLİNECEKTİR. Emin misiniz?')) return; 
+    const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_belletmenler' }) }); 
+    const data = await res.json(); 
+    if (data.success) setStore(data.store); 
+  };
+
   const handleDeleteBelletmen = async (id: string) => { const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_belletmen', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleDutySubmit = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_or_update_monthly_duty', ...dutyForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setDutyForm({ tarih: '', erkek1: '', erkek2: '', kadin1: '', kadin2: '' }); setIsEditingDuty(false); } setLoading(false); };
@@ -125,8 +139,13 @@ export default function AdminPage() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-[#006bb6] space-y-4">
               <div className="flex flex-wrap justify-between items-center gap-2">
                 <div><h2 className="text-base font-extrabold text-slate-900">➕ Yeni Öğrenci Ekle</h2><p className="text-xs text-slate-500">Veli numarası boş bırakılabilir.</p></div>
-                <button type="button" onClick={handleClearAllStudents} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-200 transition">🗑️ Tüm Öğrencileri Sıfırla</button>
+                
+                {/* ÖĞRENCİ TOPLU SİLME BUTONU GÜNCELLENDİ */}
+                <button type="button" onClick={handleClearAllStudents} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
+                  🗑️ Tüm Öğrencileri Sıfırla
+                </button>
               </div>
+              
               <form onSubmit={handleAddStudent} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
                 <input required placeholder="Ad Soyad" className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl" value={stForm.name} onChange={(e) => setStForm({ ...stForm, name: e.target.value })} />
                 <select className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl font-bold" value={stForm.cinsiyet} onChange={(e) => setStForm({ ...stForm, cinsiyet: e.target.value })}><option value="erkek">👨 Erkek Pansiyonu</option><option value="kiz">👩 Kız Pansiyonu</option></select>
@@ -171,7 +190,16 @@ export default function AdminPage() {
         {activeTab === 'belletmenler' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-[#006bb6]">
-              <h2 className="text-base font-extrabold text-slate-900 mb-4">➕ Yeni Belletmen Öğretmen Ekle</h2>
+              
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+                <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Belletmen Öğretmen Ekle</h2>
+                
+                {/* BELLETMEN TOPLU SİLME BUTONU YENİ EKLENDİ */}
+                <button type="button" onClick={handleClearAllBelletmenler} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
+                  🗑️ Tüm Belletmenleri Sıfırla
+                </button>
+              </div>
+
               <form onSubmit={handleAddBelletmen} className="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
                 <input required placeholder="Ad Soyad" className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl" value={belForm.name} onChange={(e) => setBelForm({ ...belForm, name: e.target.value })} />
                 <select className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl font-bold" value={belForm.cinsiyet} onChange={(e) => setBelForm({ ...belForm, cinsiyet: e.target.value })}><option value="erkek">👨 Erkek Belletmen</option><option value="kadin">👩 Kadın Belletmen</option></select>

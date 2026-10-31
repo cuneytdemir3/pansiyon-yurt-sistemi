@@ -85,7 +85,7 @@ export interface StoreData {
   attendanceHistory: AttendanceHistoryRecord[];
   updatedAt: number;
   tunnelUrl?: string;
-  lastResetDate?: string; // Her gece saat 02:00 sıfırlamasını takip etmek için eklendi
+  lastResetDate?: string; 
 }
 
 const DEFAULT_STORE: StoreData = {
@@ -102,18 +102,14 @@ export function normalizePhone10(raw: any): string {
 function processNightlyReset(store: StoreData): boolean {
   if (!store.students) return false;
   
-  // Türkiye saati ile şu anki anlık tarih/saat bilgisi
   const nowStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' });
   const now = new Date(nowStr);
   const currentHour = now.getHours();
   const currentDate = now.toISOString().split('T')[0];
   
-  // Eğer saat 02:00 veya sonrasındaysa ve bugün için henüz sıfırlama yapılmamışsa
   if (currentHour >= 2 && store.lastResetDate !== currentDate) {
     let wasChanged = false;
-    
     store.students.forEach((student) => {
-      // İzinli öğrencilere dokunma, geri kalan herkesi varsayılan olarak "var" yap
       if (student.status !== 'izinli' && student.status !== 'var') {
         student.status = 'var';
         wasChanged = true;
@@ -121,7 +117,7 @@ function processNightlyReset(store: StoreData): boolean {
     });
 
     store.lastResetDate = currentDate;
-    return true; // Veritabanı değişti, kaydedilmesi gerekiyor
+    return true; 
   }
   return false;
 }
@@ -149,9 +145,8 @@ async function getStore(): Promise<StoreData> {
     if (!store.attendanceHistory) store.attendanceHistory = [];
   }
   
-  // Her mağaza (store) çağrıldığında gece 02:00 kuralını kontrol et
   if (processNightlyReset(store)) {
-    await saveStore(store); // Eğer sıfırlama yapıldıysa anında buluta kaydet
+    await saveStore(store); 
   }
   
   return store;
@@ -501,11 +496,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
     }
 
+    // ÖĞRENCİ TOPLU SİLME
     if (action === 'clear_all_students') {
       store.students = [];
       store.leaves = [];
       store.attendanceHistory = [];
-      addLog(store, 'Yönetici', 'Öğrenci Listesi Sıfırlandı', 'Tüm öğrenci kayıtları temizlendi.', 'uyari');
+      addLog(store, 'Yönetici', 'Öğrenci Listesi Sıfırlandı', 'Tüm öğrenci kayıtları, izinler ve devamsızlık geçmişi temizlendi.', 'uyari');
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Tüm öğrenci listesi temizlendi.', store });
     }
@@ -527,6 +523,14 @@ export async function POST(request: Request) {
       store.belletmenler = store.belletmenler.filter((b) => b.id !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Belletmen silindi.', store });
+    }
+
+    // BELLETMEN TOPLU SİLME (YENİ)
+    if (action === 'clear_all_belletmenler') {
+      store.belletmenler = [];
+      addLog(store, 'Yönetici', 'Belletmen Listesi Sıfırlandı', 'Tüm belletmen kayıtları temizlendi.', 'uyari');
+      await saveStore(store);
+      return NextResponse.json({ success: true, message: 'Tüm belletmen listesi temizlendi.', store });
     }
 
     if (action === 'add_or_update_monthly_duty') {
