@@ -75,7 +75,7 @@ export default function AdminPage() {
   
   const handleAddBelletmen = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_belletmen', ...belForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBelForm({ name: '', cinsiyet: 'erkek', brans: '', phone: '', password: '1234' }); } setLoading(false); };
   
-  // BELLETMEN TOPLU SİLME YENİ EKLENDİ
+  // BELLETMEN TOPLU SİLME
   const handleClearAllBelletmenler = async () => { 
     if (!confirm('DİKKAT! Tüm belletmen öğretmen kayıtları ve şifreleri kalıcı olarak SİLİNECEKTİR. Emin misiniz?')) return; 
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_belletmenler' }) }); 
@@ -95,7 +95,7 @@ export default function AdminPage() {
   
   const handleClearLogs = async () => { if (!confirm('Tüm sistem loglarını temizlemek istediğinize emin misiniz?')) return; const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_audit_logs' }) }); const data = await res.json(); if (data.success) setStore(data.store); };
 
-  // 4. ERKEN ÇIKIŞLAR (BÜTÜN HOOKLAR BİTTİKTEN SONRA!)
+  // 4. ERKEN ÇIKIŞLAR
   if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
 
   if (!isLoggedIn) {
@@ -112,7 +112,7 @@ export default function AdminPage() {
     );
   }
 
-  // 5. ANA SAYFA RENDER (ÇİZİM) İŞLEMİ
+  // 5. ANA SAYFA RENDER
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <header className="bg-white border-b sticky top-0 z-20 px-4 md:px-8 py-3 shadow-sm">
@@ -138,9 +138,11 @@ export default function AdminPage() {
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-[#006bb6] space-y-4">
               <div className="flex flex-wrap justify-between items-center gap-2">
-                <div><h2 className="text-base font-extrabold text-slate-900">➕ Yeni Öğrenci Ekle</h2><p className="text-xs text-slate-500">Veli numarası boş bırakılabilir.</p></div>
-                
-                {/* ÖĞRENCİ TOPLU SİLME BUTONU GÜNCELLENDİ */}
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Öğrenci Ekle</h2>
+                  <p className="text-xs text-slate-500">Veli numarası boş bırakılabilir.</p>
+                </div>
+                {/* ÖĞRENCİ TOPLU SİLME BUTONU */}
                 <button type="button" onClick={handleClearAllStudents} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
                   🗑️ Tüm Öğrencileri Sıfırla
                 </button>
@@ -189,12 +191,14 @@ export default function AdminPage() {
         {/* 2) BELLETMENLER */}
         {activeTab === 'belletmenler' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-[#006bb6]">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 border-t-4 border-t-[#006bb6] space-y-4">
               
-              <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
-                <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Belletmen Öğretmen Ekle</h2>
-                
-                {/* BELLETMEN TOPLU SİLME BUTONU YENİ EKLENDİ */}
+              <div className="flex flex-wrap justify-between items-center gap-2">
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Belletmen Öğretmen Ekle</h2>
+                  <p className="text-xs text-slate-500">Telefon numarası şifre kurtarmak için gereklidir.</p>
+                </div>
+                {/* BELLETMEN TOPLU SİLME BUTONU (AYNI HİZADA VE TASARIMDA) */}
                 <button type="button" onClick={handleClearAllBelletmenler} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
                   🗑️ Tüm Belletmenleri Sıfırla
                 </button>
