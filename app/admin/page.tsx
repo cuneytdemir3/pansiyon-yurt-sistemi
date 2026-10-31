@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import SblLogo from '../components/SblLogo';
 
@@ -15,12 +15,26 @@ export default function AdminPage() {
   const [stForm, setStForm] = useState({ name: '', cinsiyet: 'erkek', kat: '1', oda: '101', anneAdi: '', anneTel: '', babaAdi: '', babaTel: '' });
   const [bulkText, setBulkText] = useState('');
   const [belForm, setBelForm] = useState({ name: '', cinsiyet: 'erkek', brans: '', phone: '', password: '1234' });
+  const [bulkBelText, setBulkBelText] = useState('');
   const [dutyForm, setDutyForm] = useState({ tarih: '', erkek1: '', erkek2: '', kadin1: '', kadin2: '' });
   const [isEditingDuty, setIsEditingDuty] = useState(false);
   const [editingLog, setEditingLog] = useState<any>(null);
 
+  const studentFileRef = useRef<HTMLInputElement>(null);
+  const belletmenFileRef = useRef<HTMLInputElement>(null);
+
   // 2. BÜTÜN USE-EFFECT'LER (HOOK'LAR) HİÇBİR KESİNTİ OLMADAN BURADA
   React.useEffect(() => { setMounted(true); }, []);
+
+  // Excel (.xlsx/.xls) okuma kütüphanesini dinamik yükle (Ekstra npm kurulumu gerektirmez)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !(window as any).XLSX) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   const fetchStore = async () => { 
     try { 
@@ -62,8 +76,61 @@ export default function AdminPage() {
     const rows = lines.map((line) => { const parts = line.split(/\t|;|,/); return { name: (parts[0] || '').trim(), cinsiyet: (parts[1] || 'Erkek').trim(), kat: (parts[2] || '1').trim(), oda: (parts[3] || '101').trim(), anneAdi: (parts[4] || '').trim(), anneTel: (parts[5] || '').trim(), babaAdi: (parts[6] || '').trim(), babaTel: (parts[7] || '').trim() }; }).filter((r) => r.name.length > 1);
     setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_import', rows }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBulkText(''); alert(data.message); } setLoading(false);
   };
+
+  // EXCEL DOSYASI İLE ÖĞRENCİ YÜKLEME
+  const handleStudentExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const XLSX = (window as any).XLSX;
+    if (!XLSX) {
+      alert('Excel okuma motoru yükleniyor, lütfen 2 saniye sonra tekrar deneyin.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const dataBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(dataBuffer, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+      const rows = rawRows
+        .map((cols) => ({
+          name: String(cols[0] || '').trim(),
+          cinsiyet: String(cols[1] || 'Erkek').trim(),
+          kat: String(cols[2] || '1').trim(),
+          oda: String(cols[3] || '101').trim(),
+          anneAdi: String(cols[4] || '').trim(),
+          anneTel: String(cols[5] || '').trim(),
+          babaAdi: String(cols[6] || '').trim(),
+          babaTel: String(cols[7] || '').trim()
+        }))
+        .filter((r) => r.name.length > 1 && !['ad soyad', 'ad', 'öğrenci adı', 'isim'].includes(r.name.toLowerCase()));
+
+      if (rows.length === 0) {
+        alert('Excel dosyasında geçerli öğrenci satırı bulunamadı!');
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk_import', rows })
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        setStore(resData.store);
+        alert(resData.message);
+      } else {
+        alert(resData.message || 'Yükleme hatası!');
+      }
+    } catch (err) {
+      alert('Excel dosyası okunurken bir hata oluştu.');
+    }
+    if (studentFileRef.current) studentFileRef.current.value = '';
+    setLoading(false);
+  };
   
-  // ÖĞRENCİ TOPLU SİLME
   const handleClearAllStudents = async () => { 
     if (!confirm('DİKKAT! Tüm öğrenci kayıtları, izinler ve devamsızlık geçmişi kalıcı olarak SİLİNECEKTİR. Emin misiniz?')) return; 
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_students' }) }); 
@@ -74,8 +141,79 @@ export default function AdminPage() {
   const handleDeleteStudent = async (id: string) => { const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_student', id }) }); const data = await res.json(); if (data.success) setStore(data.store); };
   
   const handleAddBelletmen = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add_belletmen', ...belForm }) }); const data = await res.json(); if (data.success) { setStore(data.store); setBelForm({ name: '', cinsiyet: 'erkek', brans: '', phone: '', password: '1234' }); } setLoading(false); };
+
+  // METİN YAPIŞTIRARAK TOPLU BELLETMEN YÜKLEME
+  const handleBulkBelletmenPaste = async () => {
+    if (!bulkBelText.trim()) return;
+    const lines = bulkBelText.trim().split('\n');
+    const rows = lines.map((line) => {
+      const parts = line.split(/\t|;|,/);
+      return {
+        name: (parts[0] || '').trim(),
+        cinsiyet: (parts[1] || 'Erkek').trim(),
+        brans: (parts[2] || 'Öğretmen').trim(),
+        phone: (parts[3] || '').trim(),
+        password: (parts[4] || '1234').trim()
+      };
+    }).filter((r) => r.name.length > 1);
+    setLoading(true);
+    const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bulk_import_belletmen', rows }) });
+    const data = await res.json();
+    if (data.success) { setStore(data.store); setBulkBelText(''); alert(data.message); }
+    setLoading(false);
+  };
+
+  // EXCEL DOSYASI İLE BELLETMEN YÜKLEME
+  const handleBelletmenExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const XLSX = (window as any).XLSX;
+    if (!XLSX) {
+      alert('Excel okuma motoru yükleniyor, lütfen 2 saniye sonra tekrar deneyin.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const dataBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(dataBuffer, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+      const rows = rawRows
+        .map((cols) => ({
+          name: String(cols[0] || '').trim(),
+          cinsiyet: String(cols[1] || 'Erkek').trim(),
+          brans: String(cols[2] || 'Öğretmen').trim(),
+          phone: String(cols[3] || '').trim(),
+          password: String(cols[4] || '1234').trim()
+        }))
+        .filter((r) => r.name.length > 1 && !['ad soyad', 'ad', 'belletmen adı', 'öğretmen adı', 'isim'].includes(r.name.toLowerCase()));
+
+      if (rows.length === 0) {
+        alert('Excel dosyasında geçerli belletmen satırı bulunamadı!');
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch('/api/pansiyon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk_import_belletmen', rows })
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        setStore(resData.store);
+        alert(resData.message);
+      } else {
+        alert(resData.message || 'Yükleme hatası!');
+      }
+    } catch (err) {
+      alert('Excel dosyası okunurken bir hata oluştu.');
+    }
+    if (belletmenFileRef.current) belletmenFileRef.current.value = '';
+    setLoading(false);
+  };
   
-  // BELLETMEN TOPLU SİLME
   const handleClearAllBelletmenler = async () => { 
     if (!confirm('DİKKAT! Tüm belletmen öğretmen kayıtları ve şifreleri kalıcı olarak SİLİNECEKTİR. Emin misiniz?')) return; 
     const res = await fetch('/api/pansiyon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear_all_belletmenler' }) }); 
@@ -142,10 +280,16 @@ export default function AdminPage() {
                   <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Öğrenci Ekle</h2>
                   <p className="text-xs text-slate-500">Veli numarası boş bırakılabilir.</p>
                 </div>
-                {/* ÖĞRENCİ TOPLU SİLME BUTONU */}
-                <button type="button" onClick={handleClearAllStudents} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
-                  🗑️ Tüm Öğrencileri Sıfırla
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {/* EXCEL DOSYASI İLE ÖĞRENCİ YÜKLEME BUTONU */}
+                  <input ref={studentFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleStudentExcelUpload} className="hidden" />
+                  <button type="button" disabled={loading} onClick={() => studentFileRef.current?.click()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                    📊 Excel Dosyası (.xlsx) Yükle
+                  </button>
+                  <button type="button" onClick={handleClearAllStudents} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                    🗑️ Tüm Öğrencileri Sıfırla
+                  </button>
+                </div>
               </div>
               
               <form onSubmit={handleAddStudent} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
@@ -159,10 +303,13 @@ export default function AdminPage() {
                 <input placeholder="Baba Tel" className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl" value={stForm.babaTel} onChange={(e) => setStForm({ ...stForm, babaTel: e.target.value })} />
                 <div className="md:col-span-4 flex justify-end"><button type="submit" className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow-sm transition">Öğrenciyi Kaydet</button></div>
               </form>
+
               <div className="pt-4 border-t border-slate-100">
-                <label className="block text-xs font-bold text-slate-700 mb-1">📥 Excel'den Toplu Yapıştır</label>
-                <textarea rows={3} placeholder="Ad Soyad | Cinsiyet | Kat | Oda | Anne Adı | Anne Tel | Baba Adı | Baba Tel" value={bulkText} onChange={(e) => setBulkText(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono bg-slate-50 focus:bg-white" />
-                <div className="flex justify-end mt-2"><button type="button" onClick={handleBulkPasteImport} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-sm transition">Buluta Aktar</button></div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  📥 Excel Sütun Sırası (Dosya Yükleme veya Kopyala/Yapıştır İçin): <span className="font-normal text-slate-500">Ad Soyad | Cinsiyet (Erkek/Kız) | Kat | Oda | Anne Adı | Anne Tel | Baba Adı | Baba Tel</span>
+                </label>
+                <textarea rows={3} placeholder="Excel'den satırları kopyalayıp buraya yapıştırabilir veya yukarıdaki yeşil 'Excel Dosyası Yükle' butonunu kullanabilirsiniz..." value={bulkText} onChange={(e) => setBulkText(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono bg-slate-50 focus:bg-white" />
+                <div className="flex justify-end mt-2"><button type="button" onClick={handleBulkPasteImport} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-sm transition">Yapıştırılanları Buluta Aktar</button></div>
               </div>
             </div>
 
@@ -198,10 +345,16 @@ export default function AdminPage() {
                   <h2 className="text-base font-extrabold text-slate-900">➕ Yeni Belletmen Öğretmen Ekle</h2>
                   <p className="text-xs text-slate-500">Telefon numarası şifre kurtarmak için gereklidir.</p>
                 </div>
-                {/* BELLETMEN TOPLU SİLME BUTONU (AYNI HİZADA VE TASARIMDA) */}
-                <button type="button" onClick={handleClearAllBelletmenler} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2">
-                  🗑️ Tüm Belletmenleri Sıfırla
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {/* EXCEL DOSYASI İLE BELLETMEN YÜKLEME BUTONU */}
+                  <input ref={belletmenFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleBelletmenExcelUpload} className="hidden" />
+                  <button type="button" disabled={loading} onClick={() => belletmenFileRef.current?.click()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                    📊 Excel Dosyası (.xlsx) Yükle
+                  </button>
+                  <button type="button" onClick={handleClearAllBelletmenler} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                    🗑️ Tüm Belletmenleri Sıfırla
+                  </button>
+                </div>
               </div>
 
               <form onSubmit={handleAddBelletmen} className="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
@@ -212,6 +365,14 @@ export default function AdminPage() {
                 <input required placeholder="Şifre" className="p-2.5 border border-slate-300 bg-slate-50 rounded-xl" value={belForm.password} onChange={(e) => setBelForm({ ...belForm, password: e.target.value })} />
                 <div className="md:col-span-5 flex justify-end"><button type="submit" className="bg-[#006bb6] hover:bg-[#005694] text-white px-6 py-2.5 rounded-xl font-bold shadow-sm transition">Belletmeni Kaydet</button></div>
               </form>
+
+              <div className="pt-4 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  📥 Excel Sütun Sırası (Dosya Yükleme veya Kopyala/Yapıştır İçin): <span className="font-normal text-slate-500">Ad Soyad | Cinsiyet (Erkek/Kadın) | Branş | Telefon | Şifre</span>
+                </label>
+                <textarea rows={3} placeholder="Excel'den belletmen satırlarını buraya yapıştırabilir veya yukarıdaki yeşil 'Excel Dosyası Yükle' butonunu kullanabilirsiniz..." value={bulkBelText} onChange={(e) => setBulkBelText(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono bg-slate-50 focus:bg-white" />
+                <div className="flex justify-end mt-2"><button type="button" onClick={handleBulkBelletmenPaste} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-sm transition">Yapıştırılanları Buluta Aktar</button></div>
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">

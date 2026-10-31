@@ -8,7 +8,7 @@ const FALLBACK_DB_URL = 'postgresql://neondb_owner:npg_P3YBw2DvSdqI@ep-long-broo
 
 function getSql() {
   const url = process.env.DATABASE_URL || FALLBACK_DB_URL;
-  if (!url || url.includes('postgresql://neondb_owner:npg_P3YBw2DvSdqI@ep-long-brook-b7pfqguz-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require')) {
+  if (!url) {
     throw new Error('DATABASE_URL tanımlı değil!');
   }
   return neon(url);
@@ -108,11 +108,9 @@ function processNightlyReset(store: StoreData): boolean {
   const currentDate = now.toISOString().split('T')[0];
   
   if (currentHour >= 2 && store.lastResetDate !== currentDate) {
-    let wasChanged = false;
     store.students.forEach((student) => {
       if (student.status !== 'izinli' && student.status !== 'var') {
         student.status = 'var';
-        wasChanged = true;
       }
     });
 
@@ -464,14 +462,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: `${newStudent.name} eklendi!`, store });
     }
 
+    // TOPLU ÖĞRENCİ YÜKLEME (EXCEL VEYA METİN)
     if (action === 'bulk_import') {
       let added = 0;
       if (Array.isArray(body.rows)) {
         for (const r of body.rows) {
-          if (!r.name || !String(r.name).trim()) continue;
+          const rawName = String(r.name || '').trim();
+          if (!rawName || rawName.toLowerCase() === 'ad soyad' || rawName.toLowerCase() === 'öğrenci adı') continue;
           store.students.push({
             id: (Date.now() + Math.random()).toString(),
-            name: cleanText(r.name, 100),
+            name: cleanText(rawName, 100),
             cinsiyet: parseStudentGender(r.cinsiyet),
             kat: normalizeKat(r.kat),
             oda: cleanText(r.oda || '101', 20),
@@ -486,7 +486,7 @@ export async function POST(request: Request) {
       }
       addLog(store, 'Yönetici', 'Toplu Öğrenci Yükleme', `${added} öğrenci yüklendi.`, 'basari');
       await saveStore(store);
-      return NextResponse.json({ success: true, message: `${added} öğrenci kalıcı olarak kaydedildi!`, store });
+      return NextResponse.json({ success: true, message: `✅ ${added} öğrenci başarıyla yüklendi!`, store });
     }
 
     if (action === 'delete_student') {
@@ -496,7 +496,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Öğrenci silindi.', store });
     }
 
-    // ÖĞRENCİ TOPLU SİLME
     if (action === 'clear_all_students') {
       store.students = [];
       store.leaves = [];
@@ -508,7 +507,7 @@ export async function POST(request: Request) {
 
     if (action === 'add_belletmen') {
       store.belletmenler.push({
-        id: Date.now().toString(),
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
         name: cleanText(body.name, 100),
         cinsiyet: parseBelletmenGender(body.cinsiyet),
         brans: cleanText(body.brans || 'Öğretmen', 80),
@@ -519,13 +518,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Belletmen eklendi.', store });
     }
 
+    // TOPLU BELLETMEN YÜKLEME (EXCEL VEYA METİN - YENİ)
+    if (action === 'bulk_import_belletmen') {
+      let added = 0;
+      if (Array.isArray(body.rows)) {
+        for (const r of body.rows) {
+          const rawName = String(r.name || '').trim();
+          if (!rawName || rawName.toLowerCase() === 'ad soyad' || rawName.toLowerCase() === 'belletmen adı') continue;
+          store.belletmenler.push({
+            id: (Date.now() + Math.random()).toString(),
+            name: cleanText(rawName, 100),
+            cinsiyet: parseBelletmenGender(r.cinsiyet),
+            brans: cleanText(r.brans || 'Öğretmen', 80),
+            phone: cleanText(r.phone, 25),
+            password: cleanText(r.password || '1234', 50)
+          });
+          added++;
+        }
+      }
+      addLog(store, 'Yönetici', 'Toplu Belletmen Yükleme', `${added} belletmen öğretmen yüklendi.`, 'basari');
+      await saveStore(store);
+      return NextResponse.json({ success: true, message: `✅ ${added} belletmen öğretmen başarıyla yüklendi!`, store });
+    }
+
     if (action === 'delete_belletmen') {
       store.belletmenler = store.belletmenler.filter((b) => b.id !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Belletmen silindi.', store });
     }
 
-    // BELLETMEN TOPLU SİLME (YENİ)
     if (action === 'clear_all_belletmenler') {
       store.belletmenler = [];
       addLog(store, 'Yönetici', 'Belletmen Listesi Sıfırlandı', 'Tüm belletmen kayıtları temizlendi.', 'uyari');
