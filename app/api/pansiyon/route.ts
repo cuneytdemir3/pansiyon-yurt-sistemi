@@ -85,16 +85,45 @@ export interface StoreData {
   attendanceHistory: AttendanceHistoryRecord[];
   updatedAt: number;
   tunnelUrl?: string;
+  lastResetDate?: string; // Her gece saat 02:00 sıfırlamasını takip etmek için eklendi
 }
 
 const DEFAULT_STORE: StoreData = {
   students: [], belletmenler: [], aylikNobetler: [], leaves: [],
-  dutyLogs: [], auditLogs: [], attendanceHistory: [], updatedAt: Date.now(), tunnelUrl: ''
+  dutyLogs: [], auditLogs: [], attendanceHistory: [], updatedAt: Date.now(), tunnelUrl: '', lastResetDate: ''
 };
 
 export function normalizePhone10(raw: any): string {
   const digits = String(raw || '').replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+// GECE 02:00 OTOMATİK SIFIRLAMA KONTROLÜ
+function processNightlyReset(store: StoreData): boolean {
+  if (!store.students) return false;
+  
+  // Türkiye saati ile şu anki anlık tarih/saat bilgisi
+  const nowStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' });
+  const now = new Date(nowStr);
+  const currentHour = now.getHours();
+  const currentDate = now.toISOString().split('T')[0];
+  
+  // Eğer saat 02:00 veya sonrasındaysa ve bugün için henüz sıfırlama yapılmamışsa
+  if (currentHour >= 2 && store.lastResetDate !== currentDate) {
+    let wasChanged = false;
+    
+    store.students.forEach((student) => {
+      // İzinli öğrencilere dokunma, geri kalan herkesi varsayılan olarak "var" yap
+      if (student.status !== 'izinli' && student.status !== 'var') {
+        student.status = 'var';
+        wasChanged = true;
+      }
+    });
+
+    store.lastResetDate = currentDate;
+    return true; // Veritabanı değişti, kaydedilmesi gerekiyor
+  }
+  return false;
 }
 
 async function getStore(): Promise<StoreData> {
@@ -107,16 +136,24 @@ async function getStore(): Promise<StoreData> {
     )
   `;
   const rows = await sql`SELECT data FROM pansiyon_cloud_state WHERE id = 1`;
+  
+  let store: StoreData;
   if (rows.length === 0) {
-    const initial = JSON.parse(JSON.stringify(DEFAULT_STORE)) as StoreData;
+    store = JSON.parse(JSON.stringify(DEFAULT_STORE)) as StoreData;
     await sql`
       INSERT INTO pansiyon_cloud_state (id, data, updated_at)
-      VALUES (1, ${JSON.stringify(initial)}::jsonb, ${Date.now()})
+      VALUES (1, ${JSON.stringify(store)}::jsonb, ${Date.now()})
     `;
-    return initial;
+  } else {
+    store = rows[0].data as StoreData;
+    if (!store.attendanceHistory) store.attendanceHistory = [];
   }
-  const store = rows[0].data as StoreData;
-  if (!store.attendanceHistory) store.attendanceHistory = [];
+  
+  // Her mağaza (store) çağrıldığında gece 02:00 kuralını kontrol et
+  if (processNightlyReset(store)) {
+    await saveStore(store); // Eğer sıfırlama yapıldıysa anında buluta kaydet
+  }
+  
   return store;
 }
 
@@ -268,7 +305,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, tunnelUrl: store.tunnelUrl });
     }
 
-    // YENİ GÜVENLİ WHATSAPP KÖPRÜSÜ (CORS ve Tünel Engellerini Aşar)
     if (action === 'send_whatsapp_otp') {
       const { phone, code, customMessage } = body;
       const tunnelUrl = store.tunnelUrl;
@@ -595,7 +631,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: 'Kayıt bulunamadı.' }, { status: 404 });
     }
 
-    if (action === 'delete_duty_log`') {
+    if (action === 'delete_duty_log') {
       store.dutyLogs = store.dutyLogs.filter((l) => l.id !== body.id);
       await saveStore(store);
       return NextResponse.json({ success: true, message: 'Silindi.', store });
