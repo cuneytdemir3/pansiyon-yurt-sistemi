@@ -3,10 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SblLogo from './components/SblLogo';
 
-// Vercel Test Güncellemesi
-interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string; anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: 'var' | 'yok' | 'izinli'; }
+// Veli Portalı İçin Tip Güncellemeleri
+export type AttendanceStatus = 'belirsiz' | 'var' | 'yok' | 'izinli';
+
+interface StudentRecord { id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string; anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: AttendanceStatus; }
 interface LeaveRecord { id: string; studentId: string; studentName: string; oda: string; tip: string; baslangic: string; bitis: string; aciklama: string; veliTel: string; createdAt: string; }
-interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string; }
+interface AttendanceHistoryRecord { id: string; studentId: string; studentName: string; oda: string; tarih: string; saat: string; seans: string; status: AttendanceStatus; belletmenName: string; }
 
 export default function UnifiedHomePortal() {
   // 1. BÜTÜN HOOKLAR (STATE VE ROUTER) EN ÜSTTE
@@ -79,7 +81,6 @@ export default function UnifiedHomePortal() {
     setErrorMsg(''); setInfoMsg(''); setLoading(true);
     
     try {
-      // Önce velinin sistemde kayıtlı olup olmadığını kontrol et
       const verifyRes = await fetch('/api/pansiyon', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -99,7 +100,6 @@ export default function UnifiedHomePortal() {
       const childNames = (verifyData.students || []).map((s: any) => s.name).join(', ');
       const customMessage = `*Prof. Dr. Mümtaz Turhan SBL Pansiyonu*\n\nSayın Velimiz (${childNames}),\nVeli Portalı Giriş Şifreniz: *${secretCode}*\n\n_Güvenliğiniz için bu kodu kimseyle paylaşmayınız._`;
       
-      // YENİ GÜVENLİ KÖPRÜ (CORS ve Tünel Engellerini Kesin Olarak Aşar)
       const proxyRes = await fetch('/api/pansiyon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,7 +183,7 @@ export default function UnifiedHomePortal() {
   const presentCount = activeStudentHistory.filter((h) => h.status === 'var').length;
   const absentCount = activeStudentHistory.filter((h) => h.status === 'yok').length;
 
-  // 5. ERKEN ÇIKIŞ BURADA OLMALI! Bütün Hook'lar bittikten sonra.
+  // 5. ERKEN ÇIKIŞ BURADA OLMALI!
   if (!mounted) return <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#006bb6] border-t-transparent rounded-full animate-spin"></div><div className="font-extrabold text-[#006bb6] tracking-widest text-sm animate-pulse">SİSTEM YÜKLENİYOR...</div></div>;
 
   // 6. ANA SAYFA ÇİZİMİ
@@ -308,8 +308,17 @@ export default function UnifiedHomePortal() {
                       <span className="text-[11px] font-bold uppercase text-[#006bb6]">Öğrenciniz</span>
                       <h3 className="text-xl font-extrabold text-slate-900">{activeStudent.name}</h3>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${activeStudent.status === 'var' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : activeStudent.status === 'izinli' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
-                      {activeStudent.status === 'var' ? '🟢 Yurtta (Var)' : activeStudent.status === 'izinli' ? '🟡 İzinli' : '🔴 Devamsız'}
+                    {/* BELİRSİZ DURUM ROZETİ EKLENDİ */}
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                      activeStudent.status === 'var' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 
+                      activeStudent.status === 'izinli' ? 'bg-amber-50 border-amber-200 text-amber-700' : 
+                      activeStudent.status === 'belirsiz' ? 'bg-slate-100 border-slate-300 text-slate-600' :
+                      'bg-rose-50 border-rose-200 text-rose-700'
+                    }`}>
+                      {activeStudent.status === 'var' ? '🟢 Yurtta (Var)' : 
+                       activeStudent.status === 'izinli' ? '🟡 İzinli' : 
+                       activeStudent.status === 'belirsiz' ? '⚪ Yoklama Bekliyor' :
+                       '🔴 Devamsız'}
                     </span>
                   </div>
 
@@ -404,10 +413,12 @@ export default function UnifiedHomePortal() {
                                         ? 'bg-emerald-100 text-emerald-800'
                                         : h.status === 'izinli'
                                         ? 'bg-amber-100 text-amber-800'
+                                        : h.status === 'belirsiz'
+                                        ? 'bg-slate-200 text-slate-700'
                                         : 'bg-rose-100 text-rose-800'
                                     }`}
                                   >
-                                    {h.status === 'var' ? '🟢 VAR' : h.status === 'izinli' ? '🟡 İZİNLİ' : '🔴 YOK'}
+                                    {h.status === 'var' ? '🟢 VAR' : h.status === 'izinli' ? '🟡 İZİNLİ' : h.status === 'belirsiz' ? '⚪ BEKLİYOR' : '🔴 YOK'}
                                   </span>
                                 </td>
                                 <td className="p-3 text-slate-600">{h.belletmenName || 'Nöbetçi Öğretmen'}</td>

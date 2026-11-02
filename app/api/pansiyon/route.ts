@@ -61,9 +61,11 @@ function cleanText(val: any, maxLen = 1000): string {
     .slice(0, maxLen);
 }
 
+export type AttendanceStatus = 'belirsiz' | 'var' | 'yok' | 'izinli';
+
 export interface StudentRecord {
   id: string; name: string; cinsiyet: 'erkek' | 'kiz'; kat: number; oda: string;
-  anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: 'var' | 'yok' | 'izinli';
+  anneAdi: string; anneTel: string; babaAdi: string; babaTel: string; status: AttendanceStatus;
 }
 export interface BelletmenRecord { id: string; name: string; cinsiyet: 'erkek' | 'kadin'; brans: string; phone: string; password: string; }
 export interface MonthlyDutyDay { tarih: string; erkek1: string; erkek2: string; kadin1: string; kadin2: string; }
@@ -72,7 +74,7 @@ export interface DutyLogRecord { id: string; tarih: string; seans: string; erkek
 export interface AuditLogRecord { id: string; tarihSaat: string; kullanici: string; islem: string; detay: string; tur: string; }
 export interface AttendanceHistoryRecord {
   id: string; studentId: string; studentName: string; oda: string;
-  tarih: string; saat: string; seans: string; status: 'var' | 'yok' | 'izinli'; belletmenName: string;
+  tarih: string; saat: string; seans: string; status: AttendanceStatus; belletmenName: string;
 }
 
 export interface StoreData {
@@ -98,7 +100,7 @@ export function normalizePhone10(raw: any): string {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-// GECE 02:00 OTOMATİK SIFIRLAMA KONTROLÜ
+// GECE 02:00 OTOMATİK SIFIRLAMA KONTROLÜ (ARTIK 'BELİRSİZ' YAPIYOR)
 function processNightlyReset(store: StoreData): boolean {
   if (!store.students) return false;
   
@@ -109,8 +111,9 @@ function processNightlyReset(store: StoreData): boolean {
   
   if (currentHour >= 2 && store.lastResetDate !== currentDate) {
     store.students.forEach((student) => {
-      if (student.status !== 'izinli' && student.status !== 'var') {
-        student.status = 'var';
+      // İzinli öğrencilere dokunma, geri kalan herkesi yeni gün için "belirsiz" (yoklama alınmadı) yap
+      if (student.status !== 'izinli' && student.status !== 'belirsiz') {
+        student.status = 'belirsiz';
       }
     });
 
@@ -409,7 +412,7 @@ export async function POST(request: Request) {
         : (body.archiveAll && Array.isArray(body.students) ? body.students : []);
 
       for (const st of recordsToArchive) {
-        if (!st || !st.id) continue;
+        if (!st || !st.id || st.status === 'belirsiz') continue; // Belirsiz olanları geçmişe arşivleme
         const existingIdx = store.attendanceHistory.findIndex(
           (h) => h.studentId === st.id && h.tarih === tarih && h.seans === seans
         );
@@ -454,7 +457,7 @@ export async function POST(request: Request) {
         anneTel: cleanText(body.anneTel, 25),
         babaAdi: cleanText(body.babaAdi, 100),
         babaTel: cleanText(body.babaTel, 25),
-        status: 'var'
+        status: 'belirsiz' // Varsayılan olarak belirsiz başlar
       };
       store.students.push(newStudent);
       addLog(store, 'Yönetici', 'Öğrenci Eklendi', `${newStudent.name} (${newStudent.cinsiyet}) eklendi.`, 'basari');
@@ -479,7 +482,7 @@ export async function POST(request: Request) {
             anneTel: cleanText(r.anneTel, 25),
             babaAdi: cleanText(r.babaAdi, 100),
             babaTel: cleanText(r.babaTel, 25),
-            status: 'var'
+            status: 'belirsiz' // Varsayılan olarak belirsiz başlar
           });
           added++;
         }
@@ -518,7 +521,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Belletmen eklendi.', store });
     }
 
-    // TOPLU BELLETMEN YÜKLEME (EXCEL VEYA METİN - YENİ)
     if (action === 'bulk_import_belletmen') {
       let added = 0;
       if (Array.isArray(body.rows)) {

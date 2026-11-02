@@ -33,7 +33,6 @@ export default function BelletmenPage() {
   });
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
 
-  // PDF Önizleme Modalı İçin Durum (Tarih Bazlı Birleştirme)
   const [pdfModalDate, setPdfModalDate] = useState<string | null>(null);
 
   // 2. BÜTÜN USE-EFFECT'LER KESİNTİSİZ BURADA
@@ -119,7 +118,7 @@ export default function BelletmenPage() {
     }
   };
 
-  const handleStatusChange = async (studentId: string, newStatus: 'var' | 'yok' | 'izinli') => {
+  const handleStatusChange = async (studentId: string, newStatus: 'var' | 'yok' | 'izinli' | 'belirsiz') => {
     if (!store?.students) return;
     let changedObj: any = null;
     const updatedStudents = store.students.map((s: any) => {
@@ -145,6 +144,46 @@ export default function BelletmenPage() {
     });
     const data = await res.json();
     if (data.success) setStore(data.store);
+    setSaving(false);
+  };
+
+  // YENİ ÖZELLİK: LİSTEDEKİ KALANLARI (BELİRSİZ OLANLARI) TEK TIKLA VAR İŞARETLE
+  const handleMarkRemainingAsVar = async () => {
+    if (!store?.students) return;
+    
+    // Ekranda görünen filtrelenmiş listedeki 'belirsiz' durumlu öğrencileri bul
+    const idsToUpdate = new Set(filteredStudents.filter((s: any) => s.status === 'belirsiz').map((s: any) => s.id));
+    
+    if (idsToUpdate.size === 0) {
+      alert('Seçili filtrede durumu "belirsiz" olan öğrenci bulunmamaktadır.');
+      return;
+    }
+
+    const updatedStudents = store.students.map((s: any) => {
+      if (idsToUpdate.has(s.id)) {
+        return { ...s, status: 'var' };
+      }
+      return s;
+    });
+
+    setStore({ ...store, students: updatedStudents });
+    setSaving(true);
+
+    const res = await fetch('/api/pansiyon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_attendance',
+        students: updatedStudents,
+        tarih: activeDate,
+        seans: activeSeans,
+        belletmenName: loggedBelletmen?.name || 'Nöbetçi Belletmen'
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setStore(data.store);
+    }
     setSaving(false);
   };
 
@@ -179,7 +218,6 @@ export default function BelletmenPage() {
       return;
     }
     
-    // GÜVENLİ VE TEK SATIRLIK WHATSAPP MESAJI (Syntax hatası temizlendi)
     const text = `*Prof. Dr. Mümtaz Turhan Sosyal Bilimler Lisesi Pansiyonu*\n\nSayın ${parentName || 'Velimiz'},\nÖğrencimiz *${student.name}* (Oda ${student.oda}), ${activeDate} tarihli *${activeSeans}* yoklamasında *YOK* olarak işaretlenmiştir.\n\nBilgilerinize sunar, acil durumda nöbetçi belletmen öğretmenimizle iletişime geçmenizi rica ederiz.`;
 
     let sent = false;
@@ -285,7 +323,6 @@ export default function BelletmenPage() {
       let updatedS = { ...s };
       const odaNo = Number(s.oda);
       
-      // AKILLI KAT FİLTRELEME (Oda numarasına göre katı otomatik belirle)
       if (!isNaN(odaNo)) {
         if (allowedGender === 'kiz') {
           if (odaNo >= 1 && odaNo <= 20) updatedS.kat = 1;
@@ -306,28 +343,26 @@ export default function BelletmenPage() {
     .filter((s: any) => {
       const odaStr = String(s.oda).trim();
       
-      // Belletmen odalarını SADECE Erkek Pansiyonunda filtrele (107, 207 vb.)
       if (allowedGender === 'erkek' && odaStr.endsWith('07')) {
         return false;
       }
 
-      // Seçili kat ve arama motoru filtresi
       const katMatch = selectedKat === 'all' || Number(s.kat) === Number(selectedKat);
       const searchMatch = !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase()) || odaStr.toLowerCase().includes(searchTerm.toLowerCase());
       
       return katMatch && searchMatch;
     })
     .sort((a: any, b: any) => {
-      return Number(a.oda) - Number(b.oda); // Odaları küçükten büyüğe sırala
+      return Number(a.oda) - Number(b.oda);
     });
 
+  const belirsizCount = filteredStudents.filter((s: any) => s.status === 'belirsiz').length;
   const varCount = filteredStudents.filter((s: any) => s.status === 'var').length;
   const yokCount = filteredStudents.filter((s: any) => s.status === 'yok').length;
   const izinCount = filteredStudents.filter((s: any) => s.status === 'izinli').length;
 
   const pdfYokStudents = allStudents.filter((s: any) => s.status === 'yok');
 
-  // GÜNLÜK GRUPLAMA (Aynı güne ait etüt ve yat kayıtlarını birleştirmek için)
   const groupedLogs = (store?.dutyLogs || []).reduce((acc: any, log: any) => {
     if (!acc[log.tarih]) acc[log.tarih] = [];
     acc[log.tarih].push(log);
@@ -335,7 +370,6 @@ export default function BelletmenPage() {
   }, {});
   const sortedDates = Object.keys(groupedLogs).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
-  // PDF BİRLEŞTİRME HESAPLAMALARI
   let pdfSeansText = '';
   let pdfMBells: string[] = [];
   let pdfFBells: string[] = [];
@@ -349,7 +383,6 @@ export default function BelletmenPage() {
     pdfFBells = Array.from(new Set(dateLogs.flatMap((l: any) => [l.kizBelletmen1, l.kizBelletmen2]).filter(Boolean)));
     pdfCombinedNotes = dateLogs.map((l: any) => `[${l.seans}]\n${l.notlar || 'Vukuat yok.'}`).join('\n\n');
 
-    // O güne ait arşivlenmiş devamsızlık geçmişini bul, yoksa canlı veriyi kullan
     const historyYok = (store?.attendanceHistory || []).filter((h: any) => h.tarih === pdfModalDate && h.status === 'yok');
     if (historyYok.length > 0) {
       const uniqueYok = new Map();
@@ -374,62 +407,15 @@ export default function BelletmenPage() {
       {/* YAZDIRMA (PRINT) İÇİN ÖZEL A4 CSS MOTORU */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 0mm;
-          }
-          body {
-            background: #ffffff !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .no-print-area {
-            display: none !important;
-          }
-          .print-modal-wrapper {
-            position: static !important;
-            background: transparent !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            overflow: visible !important;
-            display: block !important;
-          }
-          .print-modal-box {
-            max-width: 100% !important;
-            max-height: none !important;
-            width: 100% !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-            overflow: visible !important;
-            display: block !important;
-          }
-          .print-scroll-container {
-            padding: 0 !important;
-            margin: 0 !important;
-            background: transparent !important;
-            overflow: visible !important;
-            display: block !important;
-          }
-          .print-a4-sheet {
-            width: 100% !important;
-            min-height: auto !important;
-            box-shadow: none !important;
-            border: none !important;
-            padding: 12mm 15mm !important;
-            margin: 0 auto !important;
-            box-sizing: border-box !important;
-          }
-          .avoid-break {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
-          tr {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
+          @page { size: A4 portrait; margin: 0mm; }
+          body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .no-print-area { display: none !important; }
+          .print-modal-wrapper { position: static !important; background: transparent !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; display: block !important; }
+          .print-modal-box { max-width: 100% !important; max-height: none !important; width: 100% !important; box-shadow: none !important; border: none !important; border-radius: 0 !important; overflow: visible !important; display: block !important; }
+          .print-scroll-container { padding: 0 !important; margin: 0 !important; background: transparent !important; overflow: visible !important; display: block !important; }
+          .print-a4-sheet { width: 100% !important; min-height: auto !important; box-shadow: none !important; border: none !important; padding: 12mm 15mm !important; margin: 0 auto !important; box-sizing: border-box !important; }
+          .avoid-break { break-inside: avoid !important; page-break-inside: avoid !important; }
+          tr { break-inside: avoid !important; page-break-inside: avoid !important; }
         }
       `}} />
 
@@ -455,11 +441,14 @@ export default function BelletmenPage() {
         </header>
 
         <main className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-xs text-slate-500 font-bold">Listelenen Öğrenci</span><p className="text-2xl font-black text-slate-900">{filteredStudents.length}</p></div>
-            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl"><span className="text-xs text-emerald-700 font-bold">🟢 Yurtta (Var)</span><p className="text-2xl font-black text-emerald-900">{varCount}</p></div>
-            <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl"><span className="text-xs text-rose-700 font-bold">🔴 Yoklamada Yok</span><p className="text-2xl font-black text-rose-900">{yokCount}</p></div>
-            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl"><span className="text-xs text-amber-700 font-bold">🟡 Evci / İzinli</span><p className="text-2xl font-black text-amber-900">{izinCount}</p></div>
+          
+          {/* DURUM ÖZETİ KUTULARI EKLENDİ */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Listelenen</span><p className="text-2xl font-black text-slate-900">{filteredStudents.length}</p></div>
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl shadow-sm"><span className="text-[11px] text-slate-600 font-bold uppercase tracking-wider">⚪ Bekleyen</span><p className="text-2xl font-black text-slate-700">{belirsizCount}</p></div>
+            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl shadow-sm"><span className="text-[11px] text-emerald-700 font-bold uppercase tracking-wider">🟢 Yurtta</span><p className="text-2xl font-black text-emerald-900">{varCount}</p></div>
+            <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl shadow-sm"><span className="text-[11px] text-rose-700 font-bold uppercase tracking-wider">🔴 Devamsız</span><p className="text-2xl font-black text-rose-900">{yokCount}</p></div>
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl shadow-sm"><span className="text-[11px] text-amber-700 font-bold uppercase tracking-wider">🟡 İzinli</span><p className="text-2xl font-black text-amber-900">{izinCount}</p></div>
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -485,15 +474,31 @@ export default function BelletmenPage() {
                 </button>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap justify-between items-center gap-3">
-                <div className="flex flex-wrap gap-1.5">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                
+                {/* KAT FİLTRELERİ */}
+                <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
                   {(['all', 1, 2, 3, 4] as const).map((k) => (
                     <button key={String(k)} onClick={() => setSelectedKat(k)} className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${selectedKat === k ? 'bg-[#006bb6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       {k === 'all' ? 'Tüm Katlar' : `${k}. Kat Odaları`}
                     </button>
                   ))}
                 </div>
-                <input type="text" placeholder="🔍 Öğrenci adı veya oda ara..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="p-2.5 border rounded-xl text-xs w-full sm:w-64 bg-slate-50" />
+
+                <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto items-stretch md:items-center">
+                  <input type="text" placeholder="🔍 Öğrenci adı veya oda ara..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="p-2.5 border rounded-xl text-xs w-full sm:w-64 bg-slate-50" />
+                  
+                  {/* KALANLARI VAR İŞARETLE BUTONU YENİ EKLENDİ */}
+                  <button 
+                    type="button" 
+                    onClick={handleMarkRemainingAsVar} 
+                    disabled={belirsizCount === 0 || saving} 
+                    className="bg-[#006bb6] hover:bg-[#005694] disabled:bg-slate-300 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow transition"
+                  >
+                    🚀 {belirsizCount > 0 ? `${belirsizCount} Kişiyi Topluca "VAR" İşaretle` : 'Tümü İşaretlendi'}
+                  </button>
+                </div>
+
               </div>
 
               {filteredStudents.length === 0 ? (
@@ -501,16 +506,25 @@ export default function BelletmenPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {filteredStudents.map((st: any) => (
-                    <div key={st.id} className={`bg-white rounded-2xl border p-4 shadow-sm transition ${st.status === 'yok' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'}`}>
-                      <div className="flex justify-between items-start gap-2">
+                    <div key={st.id} className={`bg-white rounded-2xl border p-4 shadow-sm transition ${
+                      st.status === 'yok' ? 'border-rose-400 ring-2 ring-rose-100' : 
+                      st.status === 'belirsiz' ? 'border-slate-300 ring-2 ring-slate-100 opacity-90' : 
+                      'border-slate-200'
+                    }`}>
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div>
-                          <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">{st.kat}. Kat • Oda {st.oda}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">{st.kat}. Kat • Oda {st.oda}</span>
+                            
+                            {/* BELİRSİZ ETİKETİ GÖRÜNÜMÜ */}
+                            {st.status === 'belirsiz' && <span className="text-[10px] font-black bg-slate-200 text-slate-600 px-2 py-0.5 rounded uppercase tracking-widest animate-pulse">Yoklama Bekliyor</span>}
+                          </div>
                           <h3 className="text-base font-extrabold text-slate-900 mt-1">{st.name}</h3>
                         </div>
-                        <div className="flex gap-1">
-                          <button onClick={() => handleStatusChange(st.id, 'var')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'var' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'}`}>Var</button>
-                          <button onClick={() => handleStatusChange(st.id, 'yok')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'yok' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-rose-50'}`}>Yok</button>
-                          <button onClick={() => handleStatusChange(st.id, 'izinli')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'izinli' ? 'bg-amber-500 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-amber-50'}`}>İzinli</button>
+                        <div className="flex gap-1 w-full sm:w-auto justify-between sm:justify-end">
+                          <button onClick={() => handleStatusChange(st.id, 'var')} className={`flex-1 sm:flex-none px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'var' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 border border-slate-200'}`}>Var</button>
+                          <button onClick={() => handleStatusChange(st.id, 'yok')} className={`flex-1 sm:flex-none px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'yok' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 border border-slate-200'}`}>Yok</button>
+                          <button onClick={() => handleStatusChange(st.id, 'izinli')} className={`flex-1 sm:flex-none px-3 py-1.5 rounded-xl text-xs font-bold transition ${st.status === 'izinli' ? 'bg-amber-500 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 border border-slate-200'}`}>İzinli</button>
                         </div>
                       </div>
 
